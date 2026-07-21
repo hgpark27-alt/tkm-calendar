@@ -477,6 +477,17 @@ function renderDayPanel() {
 
     li.appendChild(body);
 
+    const addNote = document.createElement('button');
+    addNote.type = 'button';
+    addNote.className = 'event-addnote';
+    addNote.title = 'Add to My Notes';
+    addNote.textContent = '+';
+    addNote.addEventListener('click', (e) => {
+      e.stopPropagation();
+      addPersonalTodo(ev.title);
+    });
+    li.appendChild(addNote);
+
     const del = document.createElement('button');
     del.className = 'event-del';
     del.textContent = '×';

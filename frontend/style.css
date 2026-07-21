@@ -33,6 +33,7 @@
   --accent: #5b9bdb;
   --accent-soft: #1c2c3c;
   --danger: #ff6961;
+  --c8: #d8d8dc; /* Graphite(기타 카테고리)는 어두운 배경에서 안 보여서 밝은 톤으로 교체 */
 }
 
 /* ── Tack 스타일(메모장) 테마 ─────────────────────────── */
@@ -159,7 +160,10 @@ body {
 }
 
 .cell {
-  aspect-ratio: 1 / 0.82;
+  /* aspect-ratio 대신 min-height — 너비 기준 비율로 고정하면 창 폭이 좁아졌을 때
+     점(dots)이 들어갈 공간이 부족해서 다음 줄로 내용이 넘치는 문제가 있었음.
+     grid의 암묵적 행은 기본이 auto라서, 내용(점 개수)에 맞춰 알아서 커짐. */
+  min-height: 34px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -204,7 +208,7 @@ body {
 
 .dots { display: flex; gap: 2.5px; height: 5px; align-items: center; }
 .dot { width: 5px; height: 5px; border-radius: 50%; }
-.dot-none { background: #fff; border: 1px solid var(--border); box-sizing: border-box; }
+.dot-none { background: var(--text); } /* 테마 글자색을 그대로 써서 라이트=검정, 다크=흰색으로 자동 대응 */
 .dot-more { font-size: 8px; color: var(--text-soft); line-height: 1; }
 
 /* ── 최대 모드: 점 대신 셀 안에 업무 제목까지 표시 ─────────────────────────── */
@@ -336,6 +340,14 @@ body {
 }
 .event-meta { font-size: 11px; color: var(--text-soft); }
 .event-time { font-size: 11.5px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.event-addnote {
+  background: none; border: 1px solid var(--border); border-radius: 50%;
+  color: var(--text-soft); width: 18px; height: 18px; line-height: 1;
+  font-size: 13px; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.event-addnote:hover { color: var(--accent); border-color: var(--accent); }
+
 .event-del {
   background: none; border: none; color: var(--text-soft);
   font-size: 15px; cursor: pointer; padding: 2px 4px;
