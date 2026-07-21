@@ -94,7 +94,7 @@ function deleteTodo(id) {
 
 // ===== 설정 =====
 const API_URL = 'https://script.google.com/macros/s/AKfycbybOFKkrFU7No0cJS1LG2rKVjXyTWcY5f2vYxEoEAPGWq6ckGBIPGACPcb0PrHP-Hb9yg/exec';
-const WIDGET_W = 304; // main/index.js의 창 너비와 일치
+const WIDGET_W = 243; // main/index.js의 창 너비와 일치 (기존 304의 80%)
 const WIDGET_MAX_H = 700;
 
 // 항상 콘텐츠 크기만큼만 창을 차지하게 함(Electron 없으면 조용히 무시됨) — 모달/팝업은
@@ -219,6 +219,9 @@ async function init() {
   // 로컬 전용 데이터(최근 업무, 개인 할일) — 네트워크 필요 없이 바로 로드
   await loadLocalData();
   renderPersonalTodos();
+
+  // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리
+  window.api?.onBlur?.(closeAllOverlaysOnBlur);
 
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
@@ -623,6 +626,17 @@ function preselectWeekdayIfEmpty() {
   if (btn) btn.classList.add('active');
 }
 function closeAddModal() { $('#modalBackdrop').classList.remove('open'); resizeToContent(); }
+function closePopover() {
+  $('#settingsPopover').classList.remove('open');
+  $('#popoverBackdrop').classList.remove('open');
+  resizeToContent();
+}
+// Tack처럼 창이 포커스를 잃으면 열려있던 모달/팝업/반복관리 창을 닫음
+function closeAllOverlaysOnBlur() {
+  if ($('#modalBackdrop').classList.contains('open')) closeAddModal();
+  if ($('#recurringBackdrop').classList.contains('open')) { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }
+  closePopover();
+}
 
 async function onSaveEvent() {
   const title = $('#fTitle').value.trim();
@@ -891,11 +905,6 @@ function bindEvents() {
   });
 
   // ── 설정 팝업 ──
-  const closePopover = () => {
-    $('#settingsPopover').classList.remove('open');
-    $('#popoverBackdrop').classList.remove('open');
-    resizeToContent();
-  };
   $('#gearBtn').addEventListener('click', (e) => {
     e.stopPropagation();
     $('#settingsPopover').classList.toggle('open');

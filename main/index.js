@@ -5,8 +5,8 @@ const fs = require('fs')
 
 app.setPath('userData', path.join(app.getPath('appData'), 'TKM Calendar'))
 
-const W = 304        // 기존 380의 약 80%
-const H_INITIAL = 420 // 초기값일 뿐, 로드 직후 렌더러가 실제 콘텐츠 크기로 다시 맞춤
+const W = 243        // 기존 304의 80% — 렌더러의 CSS zoom:0.8과 짝을 맞춤(app.js의 WIDGET_W와 일치해야 함)
+const H_INITIAL = 340 // 초기값일 뿐, 로드 직후 렌더러가 실제 콘텐츠 크기로 다시 맞춤
 
 function prefsPath() { return path.join(app.getPath('userData'), 'prefs.json') }
 function localDataPath() { return path.join(app.getPath('userData'), 'local-data.json') }
@@ -82,6 +82,13 @@ function createWindow() {
     const p = loadPrefs()
     savePrefs({ ...p, pos: { x: b.x, y: b.y } })
   })
+
+  // 타이틀바(app-region: drag)를 더블클릭하면 Windows가 자동으로 전체화면 처리해버림 —
+  // 위젯이라 원하는 동작이 아니라서, 최대화되면 즉시 되돌림
+  win.on('maximize', () => win.unmaximize())
+
+  // Tack처럼 창이 포커스를 잃으면(다른 데 클릭) 열려있던 모달/팝업을 닫음
+  win.on('blur', () => win.webContents.send('win-blur'))
 
   win.loadFile(path.join(__dirname, '..', 'frontend', 'index.html'))
 }

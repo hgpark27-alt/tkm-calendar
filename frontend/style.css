@@ -59,6 +59,7 @@ html, body {
 
 body {
   margin: 0;
+  zoom: 0.8; /* 위젯 전체를 80%로 축소 — transform과 달리 실제 레이아웃 크기도 같이 줄어듦(Chromium 전용, Electron이라 문제없음) */
   font-family: "Malgun Gothic", "맑은 고딕", "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);

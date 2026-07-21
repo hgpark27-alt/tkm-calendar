@@ -7,5 +7,10 @@ contextBridge.exposeInMainWorld('api', {
   getPin: () => ipcRenderer.invoke('get-pin'),
   resize: (w, h) => ipcRenderer.sendSync('win-resize', w, h),
   getLocalData: () => ipcRenderer.invoke('get-local-data'),
-  saveLocalData: (data) => ipcRenderer.invoke('save-local-data', data)
+  saveLocalData: (data) => ipcRenderer.invoke('save-local-data', data),
+  onBlur: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on('win-blur', handler)
+    return () => ipcRenderer.removeListener('win-blur', handler)
+  }
 })
