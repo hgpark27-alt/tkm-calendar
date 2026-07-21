@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TKM Calendar</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div class="title-bar">
+      <span class="title-label">TKM Calendar</span>
+      <div class="title-actions">
+        <button class="icon-btn" id="refreshBtn" aria-label="Refresh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        </button>
+        <button class="icon-btn" id="gearBtn" aria-label="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+        <button class="icon-btn" id="pinBtn" aria-label="Always on top">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+        </button>
+        <button class="icon-btn" id="minimizeBtn" aria-label="Minimize">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+        <button class="icon-btn" id="closeBtn" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <header class="topbar">
+      <button class="nav-btn" id="prevMonth" aria-label="Previous month">‹</button>
+      <h1 class="month-title" id="monthTitle">Jul 2026</h1>
+      <button class="nav-btn" id="nextMonth" aria-label="Next month">›</button>
+      <button class="today-btn" id="todayBtn">Today</button>
+    </header>
+
+    <div class="weekday-row">
+      <span class="wd sun">Sun</span><span class="wd">Mon</span><span class="wd">Tue</span>
+      <span class="wd">Wed</span><span class="wd">Thu</span><span class="wd">Fri</span><span class="wd sat">Sat</span>
+    </div>
+
+    <div class="grid" id="grid"></div>
+
+    <button class="day-panel-toggle" id="dayPanelToggle" hidden>Show list ▾</button>
+
+    <section class="day-panel" id="dayPanel">
+      <div class="day-panel-header">
+        <span id="selectedDateLabel">Select a date</span>
+        <button class="add-btn" id="openAdd" aria-label="Add event">+</button>
+      </div>
+      <ul class="event-list" id="eventList"></ul>
+    </section>
+
+    <div class="section-divider-thick"></div>
+
+    <section class="personal-todo">
+      <div class="personal-todo-header">My Notes</div>
+      <input type="text" id="todoInput" class="todo-input" placeholder="Add a personal task and press Enter...">
+      <ul class="todo-list" id="todoList"></ul>
+    </section>
+  </div>
+
+  <div class="popover-backdrop" id="popoverBackdrop"></div>
+  <div class="popover" id="settingsPopover">
+    <div class="popover-label">View</div>
+    <button class="popover-item" data-view="simple">Simple</button>
+    <button class="popover-item" data-view="max">Max</button>
+    <div class="popover-divider"></div>
+    <div class="popover-label">Theme</div>
+    <button class="popover-item" data-theme="light">Light</button>
+    <button class="popover-item" data-theme="dark">Dark</button>
+    <button class="popover-item" data-theme="tack">Tack Style</button>
+    <div class="popover-divider"></div>
+    <button class="popover-item" id="openRecurringMgmt">Manage Recurring</button>
+  </div>
+
+  <!-- Recurring event management -->
+  <div class="modal-backdrop" id="recurringBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Recurring Events</h2>
+        <button class="close-btn" id="closeRecurring" aria-label="Close">×</button>
+      </div>
+      <ul class="event-list" id="recurringList"></ul>
+    </div>
+  </div>
+
+  <!-- Add / edit event -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add Event</h2>
+        <button class="close-btn" id="closeModal" aria-label="Close">×</button>
+      </div>
+
+      <label class="field field-primary">
+        <span>Title</span>
+        <input type="text" id="fTitle" placeholder="Task description">
+      </label>
+
+      <div class="recent-chips" id="recentChips"></div>
+
+      <label class="field">
+        <span>Author</span>
+        <input type="text" id="fAuthor" placeholder="Name">
+      </label>
+
+      <label class="field">
+        <span>Date</span>
+        <input type="date" id="fDate">
+      </label>
+
+      <label class="field">
+        <span>Time (optional — leave blank for all day)</span>
+        <input type="time" id="fTime">
+      </label>
+
+      <label class="field">
+        <span>Category</span>
+        <div class="cat-chips" id="catChips"></div>
+      </label>
+
+      <label class="field" id="repeatRow">
+        <span>Repeat</span>
+        <select id="fRepeat">
+          <option value="none">None</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Biweekly</option>
+          <option value="custom">Every N days</option>
+        </select>
+      </label>
+
+      <div class="field" id="biweeklyRow" hidden>
+        <span>Repeat on</span>
+        <div class="weekday-picker" id="weekdayPicker">
+          <button type="button" data-day="SU">Su</button>
+          <button type="button" data-day="MO">Mo</button>
+          <button type="button" data-day="TU">Tu</button>
+          <button type="button" data-day="WE">We</button>
+          <button type="button" data-day="TH">Th</button>
+          <button type="button" data-day="FR">Fr</button>
+          <button type="button" data-day="SA">Sa</button>
+        </div>
+      </div>
+
+      <label class="field" id="customRow" hidden>
+        <span>Every N days</span>
+        <input type="number" id="fIntervalDays" min="1" value="3">
+      </label>
+
+      <label class="field" id="untilRow" hidden>
+        <span>End date (optional, default 1 year)</span>
+        <input type="date" id="fUntil">
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn-primary" id="saveEvent">Save</button>
+      </div>
+      <p class="hint" id="formHint"></p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
