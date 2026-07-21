@@ -185,7 +185,10 @@ body {
   box-sizing: border-box;
 }
 .cell.today .daynum {
-  border: 1.5px solid var(--accent);
+  /* border 대신 box-shadow로 링을 그림 — border는 box-sizing:border-box와 만나면
+     콘텐츠 박스를 줄여서 line-height(26px)와 어긋나 숫자가 미묘하게 아래로 쏠렸었음.
+     box-shadow는 레이아웃에 전혀 영향을 안 줘서 다른 날짜와 정확히 같은 중앙정렬 유지됨. */
+  box-shadow: inset 0 0 0 1.5px var(--accent);
   color: var(--accent);
   font-weight: 700;
 }
@@ -196,7 +199,7 @@ body {
 }
 /* 오늘 = 선택 날짜가 겹칠 때, 같은 색 테두리가 채우기에 묻혀 안 보이는 문제 방지 */
 .cell.today.selected .daynum {
-  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.85);
 }
 
 .dots { display: flex; gap: 2.5px; height: 5px; align-items: center; }
