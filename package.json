@@ -28,7 +28,7 @@
     "publish": {
       "provider": "github",
       "owner": "hgpark27-alt",
-      "repo": "thegoodgame"
+      "repo": "tkm-calendar"
     }
   },
   "devDependencies": {
