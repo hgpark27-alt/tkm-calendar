@@ -298,15 +298,15 @@ body {
 }
 .todo-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.todo-list { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.todo-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .todo-item {
-  display: flex; align-items: center; gap: 7px;
-  padding: 4px 7px;
-  border-radius: 7px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 8px;
+  border-radius: 8px;
   background: var(--bg);
 }
 .todo-check {
-  width: 16px; height: 16px;
+  width: 22px; height: 22px;
   border-radius: 50%;
   border: 1.5px solid var(--border);
   background: none;
@@ -315,10 +315,10 @@ body {
   display: flex; align-items: center; justify-content: center;
   color: #fff;
 }
-.todo-check.done { background: var(--accent); border-color: var(--accent); font-size: 10px; }
-.todo-text { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-check.done { background: var(--accent); border-color: var(--accent); font-size: 14px; }
+.todo-text { flex: 1; min-width: 0; font-size: 25px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-text.done { text-decoration: line-through; color: var(--text-soft); }
-.todo-del { background: none; border: none; color: var(--text-soft); font-size: 14px; cursor: pointer; padding: 0 3px; flex-shrink: 0; }
+.todo-del { background: none; border: none; color: var(--text-soft); font-size: 18px; cursor: pointer; padding: 0 5px; flex-shrink: 0; }
 .todo-del:hover { color: var(--danger); }
 
 /* ── 하단 일정 패널 ─────────────────────────── */

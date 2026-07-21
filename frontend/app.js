@@ -222,7 +222,14 @@ async function init() {
 
   // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리하고 달력만 남김
   window.api?.onBlur?.(closeAllOverlaysOnBlur);
-  window.api?.onFocus?.(restoreOverlaysOnFocus);
+  // 포커스를 얻는 것 자체(win-focus)로는 안 펼침 — 손잡이(타이틀바)를 눌러서 창을 옮기기만 해도
+  // OS 포커스는 얻어지기 때문에, 펼치는 건 "타이틀바 밖을 실제로 클릭했을 때"로만 판단함
+  document.addEventListener('click', (e) => {
+    const app = document.getElementById('app');
+    if (!app.classList.contains('unfocused')) return;
+    if (e.target.closest('.title-bar')) return; // 손잡이 클릭/드래그는 이동만, 펼치지 않음
+    restoreOverlaysOnFocus();
+  });
 
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
@@ -632,6 +639,16 @@ function closePopover() {
   $('#popoverBackdrop').classList.remove('open');
   resizeToContent();
 }
+// display:none 전환 직후엔 브라우저 레이아웃이 한 프레임 늦게 안정되는 경우가 있어서(6주짜리
+// 그리드에서 겪었던 것과 같은 종류) 여러 타이밍에 걸쳐 반복 재측정 — 접힘/펼침 직후 여백이
+// 남거나 창이 덜 줄어드는 문제 방지
+function resettleSize() {
+  resizeToContent();
+  requestAnimationFrame(() => requestAnimationFrame(resizeToContent));
+  setTimeout(resizeToContent, 60);
+  setTimeout(resizeToContent, 200);
+}
+
 // Tack처럼 창이 포커스를 잃으면 열려있던 모달/팝업/반복관리 창을 닫고,
 // 일정 목록은 접고(My Notes 체크리스트는 유지) 오늘 날짜·오늘 달로 돌아감
 function closeAllOverlaysOnBlur() {
@@ -650,15 +667,13 @@ function closeAllOverlaysOnBlur() {
   } else {
     renderGrid();
     renderDayPanel();
-    resizeToContent();
-    setTimeout(resizeToContent, 50); // 레이아웃이 한 프레임 늦게 안정되는 경우 대비(접힘 직후 여백 남는 문제 방지)
   }
+  resettleSize();
 }
 // 창이 다시 포커스를 얻으면(클릭해서 돌아옴) 접어뒀던 걸 원래대로 펼침
 function restoreOverlaysOnFocus() {
   document.getElementById('app').classList.remove('unfocused');
-  resizeToContent();
-  setTimeout(resizeToContent, 50);
+  resettleSize();
 }
 
 async function onSaveEvent() {
