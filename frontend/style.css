@@ -243,8 +243,27 @@ body {
    다시 클릭하면 원래대로 돌아옴 */
 #app.unfocused .day-panel-toggle,
 #app.unfocused .day-panel,
-#app.unfocused .todo-input {
+#app.unfocused .todo-input,
+#app.unfocused .title-label,
+#app.unfocused .title-actions,
+#app.unfocused .nav-btn,
+#app.unfocused .today-btn {
   display: none;
+}
+/* 제목/아이콘은 숨겨도 타이틀바 자체(드래그 영역)는 남겨서 Tack처럼 계속 창을 옮길 수 있게 —
+   빈 줄만 있으면 어디를 잡아야 할지 안 보이니 작은 손잡이(핸들) 바를 대신 표시 */
+#app.unfocused .title-bar {
+  min-height: 14px;
+  padding: 6px 8px;
+  justify-content: center;
+}
+#app.unfocused .title-bar::after {
+  content: '';
+  display: block;
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
 }
 
 .day-panel-toggle {
