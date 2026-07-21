@@ -238,12 +238,12 @@ body {
 }
 .chip-more { font-size: 7.5px; color: var(--text-soft); padding-left: 3px; }
 
-/* 창이 포커스를 잃으면(다른 데 클릭) 달력만 남기고 나머지(일정 목록/My Notes)는 숨김 —
-   Tack처럼 위젯이 안 쓰는 동안은 최대한 작고 심플하게. 다시 클릭하면 원래대로 돌아옴 */
+/* 창이 포커스를 잃으면(다른 데 클릭) 일정 목록(day panel)과 입력창만 숨김 —
+   My Notes 체크리스트 자체는 계속 보여야 함(할 일 확인은 계속 필요하니까).
+   다시 클릭하면 원래대로 돌아옴 */
 #app.unfocused .day-panel-toggle,
 #app.unfocused .day-panel,
-#app.unfocused .section-divider-thick,
-#app.unfocused .personal-todo {
+#app.unfocused .todo-input {
   display: none;
 }
 

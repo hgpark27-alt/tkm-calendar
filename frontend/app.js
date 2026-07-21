@@ -633,22 +633,32 @@ function closePopover() {
   resizeToContent();
 }
 // Tack처럼 창이 포커스를 잃으면 열려있던 모달/팝업/반복관리 창을 닫고,
-// 일정 목록·My Notes까지 다 접어서 달력만 남긴 뒤 오늘 날짜로 돌아감
+// 일정 목록은 접고(My Notes 체크리스트는 유지) 오늘 날짜·오늘 달로 돌아감
 function closeAllOverlaysOnBlur() {
   if ($('#modalBackdrop').classList.contains('open')) closeAddModal();
   if ($('#recurringBackdrop').classList.contains('open')) { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }
   closePopover();
 
-  state.selectedDate = todayKey();
   document.getElementById('app').classList.add('unfocused');
-  renderGrid();
-  renderDayPanel();
-  resizeToContent();
+  state.selectedDate = todayKey();
+
+  const now = new Date();
+  if (state.year !== now.getFullYear() || state.month !== now.getMonth() + 1) {
+    state.year = now.getFullYear();
+    state.month = now.getMonth() + 1;
+    loadMonth(); // renderAll()이 그리드/패널을 다시 그리고 창 크기까지 맞춰줌(캐시 있으면 네트워크 없이 즉시)
+  } else {
+    renderGrid();
+    renderDayPanel();
+    resizeToContent();
+    setTimeout(resizeToContent, 50); // 레이아웃이 한 프레임 늦게 안정되는 경우 대비(접힘 직후 여백 남는 문제 방지)
+  }
 }
 // 창이 다시 포커스를 얻으면(클릭해서 돌아옴) 접어뒀던 걸 원래대로 펼침
 function restoreOverlaysOnFocus() {
   document.getElementById('app').classList.remove('unfocused');
   resizeToContent();
+  setTimeout(resizeToContent, 50);
 }
 
 async function onSaveEvent() {
