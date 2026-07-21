@@ -36,16 +36,28 @@
   --c8: #d8d8dc; /* Graphite(기타 카테고리)는 어두운 배경에서 안 보여서 밝은 톤으로 교체 */
 }
 
-/* ── Tack 스타일(메모장) 테마 ─────────────────────────── */
+/* ── Tack 스타일(포스트잇) 테마 ─────────────────────────── */
 [data-theme="tack"] {
-  --bg: #fdf9f0;
-  --bg-soft: #f5efdc;
-  --text: #3a2f28;
-  --text-soft: #948572;
-  --border: #e5d8ba;
-  --accent: #b5651d;
-  --accent-soft: #f1e2c8;
+  --bg: #fff6cb;
+  --bg-soft: #fdeda3;
+  --text: #4a3c12;
+  --text-soft: #948043;
+  --border: #ecdd82;
+  --accent: #f2dd65;
+  --accent-soft: #fbf2bf;
   --danger: #c1442e;
+}
+/* accent(#f2dd65)가 밝은 노랑이라 흰 글자를 얹으면 대비가 약함 — 포스트잇처럼
+   진한 잉크색(--text) 글자를 쓰는 게 더 잘 보이고 컨셉에도 맞음 */
+[data-theme="tack"] .add-btn,
+[data-theme="tack"] .btn-primary,
+[data-theme="tack"] .weekday-picker button.active,
+[data-theme="tack"] .todo-check.done,
+[data-theme="tack"] .cell.selected .daynum {
+  color: var(--text);
+}
+[data-theme="tack"] .cell.today.selected .daynum {
+  box-shadow: inset 0 0 0 1.5px rgba(74, 60, 18, 0.75);
 }
 
 * { box-sizing: border-box; }
@@ -263,7 +275,7 @@ body {
   width: 28px;
   height: 3px;
   border-radius: 2px;
-  background: var(--border);
+  background: var(--accent);
 }
 
 .day-panel-toggle {
@@ -288,8 +300,8 @@ body {
 .todo-input {
   width: 100%;
   font: inherit;
-  font-size: 12.5px;
-  padding: 7px 9px;
+  font-size: 18px;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-soft);
@@ -306,7 +318,7 @@ body {
   background: var(--bg);
 }
 .todo-check {
-  width: 22px; height: 22px;
+  width: 19px; height: 19px;
   border-radius: 50%;
   border: 1.5px solid var(--border);
   background: none;
@@ -315,10 +327,10 @@ body {
   display: flex; align-items: center; justify-content: center;
   color: #fff;
 }
-.todo-check.done { background: var(--accent); border-color: var(--accent); font-size: 14px; }
-.todo-text { flex: 1; min-width: 0; font-size: 25px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-check.done { background: var(--accent); border-color: var(--accent); font-size: 12px; }
+.todo-text { flex: 1; min-width: 0; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-text.done { text-decoration: line-through; color: var(--text-soft); }
-.todo-del { background: none; border: none; color: var(--text-soft); font-size: 18px; cursor: pointer; padding: 0 5px; flex-shrink: 0; }
+.todo-del { background: none; border: none; color: var(--text-soft); font-size: 16px; cursor: pointer; padding: 0 4px; flex-shrink: 0; }
 .todo-del:hover { color: var(--danger); }
 
 /* ── 하단 일정 패널 ─────────────────────────── */
