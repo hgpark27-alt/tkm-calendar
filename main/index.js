@@ -89,6 +89,8 @@ function createWindow() {
 
   // Tack처럼 창이 포커스를 잃으면(다른 데 클릭) 열려있던 모달/팝업을 닫음
   win.on('blur', () => win.webContents.send('win-blur'))
+  // 다시 포커스를 얻으면(클릭해서 돌아옴) 접어뒀던 화면을 원래대로 복원
+  win.on('focus', () => win.webContents.send('win-focus'))
 
   win.loadFile(path.join(__dirname, '..', 'frontend', 'index.html'))
 }

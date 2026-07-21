@@ -87,8 +87,8 @@ body {
 .title-label { font-size: 11px; font-weight: 600; color: var(--text-soft); padding-left: 4px; }
 .title-actions { display: flex; gap: 2px; -webkit-app-region: no-drag; }
 .icon-btn {
-  width: 22px; height: 22px;
-  border-radius: 6px;
+  width: 27px; height: 27px;
+  border-radius: 7px;
   border: none;
   background: none;
   color: var(--text-soft);
@@ -229,6 +229,7 @@ body {
   flex: 1;
   min-width: 0;   /* 이게 없으면 flex 자식이 안 줄어들고 부모(셀)가 늘어남 — 대신 말줄임표로 잘림 */
   font-size: 9.5px;
+  font-weight: 600; /* 기본(400)이 너무 얇아서 작은 크기에서 잘 안 읽혔음 */
   line-height: 1.3;
   color: var(--text);
   overflow: hidden;
@@ -236,6 +237,15 @@ body {
   white-space: nowrap;
 }
 .chip-more { font-size: 7.5px; color: var(--text-soft); padding-left: 3px; }
+
+/* 창이 포커스를 잃으면(다른 데 클릭) 달력만 남기고 나머지(일정 목록/My Notes)는 숨김 —
+   Tack처럼 위젯이 안 쓰는 동안은 최대한 작고 심플하게. 다시 클릭하면 원래대로 돌아옴 */
+#app.unfocused .day-panel-toggle,
+#app.unfocused .day-panel,
+#app.unfocused .section-divider-thick,
+#app.unfocused .personal-todo {
+  display: none;
+}
 
 .day-panel-toggle {
   flex-shrink: 0;
@@ -254,8 +264,8 @@ body {
 /* ── 개인 할일(로컬 전용, 구글 캘린더에 안 올라감) ─────────────────────────── */
 .section-divider-thick { height: 6px; background: var(--bg-soft); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 
-.personal-todo { padding: 8px 10px 12px; }
-.personal-todo-header { font-size: 11px; font-weight: 600; color: var(--text-soft); margin-bottom: 6px; }
+.personal-todo { padding: 8px 10px 8px; }
+.personal-todo-header { font-size: 11px; font-weight: 600; color: var(--text-soft); margin-bottom: 5px; }
 .todo-input {
   width: 100%;
   font: inherit;
@@ -265,15 +275,15 @@ body {
   border: 1px solid var(--border);
   background: var(--bg-soft);
   color: var(--text);
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 .todo-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.todo-list { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.todo-list { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .todo-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 7px;
+  border-radius: 7px;
   background: var(--bg);
 }
 .todo-check {
@@ -342,10 +352,11 @@ body {
 .event-meta { font-size: 11px; color: var(--text-soft); }
 .event-time { font-size: 11.5px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .event-addnote {
-  background: none; border: 1px solid var(--border); border-radius: 50%;
-  color: var(--text-soft); width: 18px; height: 18px; line-height: 1;
-  font-size: 13px; cursor: pointer; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text-soft); padding: 4px 8px; line-height: 1;
+  font-size: 10.5px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+  white-space: nowrap;
+  display: flex; align-items: center; justify-content: center; gap: 2px;
 }
 .event-addnote:hover { color: var(--accent); border-color: var(--accent); }
 
@@ -500,7 +511,9 @@ body {
   cursor: pointer;
 }
 .popover-item:hover { background: var(--bg-soft); }
-.popover-item.active { color: var(--accent); font-weight: 600; }
+/* 글자색을 accent로 바꾸는 대신(테마 조합에 따라 대비가 약해질 수 있었음) 배경 하이라이트로만
+   활성 표시 — 카테고리 칩(.chip.active)과 같은 방식이라 글자색은 항상 --text로 고정, 항상 잘 보임 */
+.popover-item.active { background: var(--accent-soft); font-weight: 600; }
 .popover-divider { height: 1px; background: var(--border); margin: 6px 2px; }
 
 /* ── 접근성: 모션 최소화 ─────────────────────────── */

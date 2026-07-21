@@ -220,8 +220,9 @@ async function init() {
   await loadLocalData();
   renderPersonalTodos();
 
-  // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리
+  // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리하고 달력만 남김
   window.api?.onBlur?.(closeAllOverlaysOnBlur);
+  window.api?.onFocus?.(restoreOverlaysOnFocus);
 
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
@@ -484,7 +485,7 @@ function renderDayPanel() {
     addNote.type = 'button';
     addNote.className = 'event-addnote';
     addNote.title = 'Add to My Notes';
-    addNote.textContent = '+';
+    addNote.textContent = '+ Add';
     addNote.addEventListener('click', (e) => {
       e.stopPropagation();
       addPersonalTodo(ev.title);
@@ -631,11 +632,23 @@ function closePopover() {
   $('#popoverBackdrop').classList.remove('open');
   resizeToContent();
 }
-// Tack처럼 창이 포커스를 잃으면 열려있던 모달/팝업/반복관리 창을 닫음
+// Tack처럼 창이 포커스를 잃으면 열려있던 모달/팝업/반복관리 창을 닫고,
+// 일정 목록·My Notes까지 다 접어서 달력만 남긴 뒤 오늘 날짜로 돌아감
 function closeAllOverlaysOnBlur() {
   if ($('#modalBackdrop').classList.contains('open')) closeAddModal();
   if ($('#recurringBackdrop').classList.contains('open')) { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }
   closePopover();
+
+  state.selectedDate = todayKey();
+  document.getElementById('app').classList.add('unfocused');
+  renderGrid();
+  renderDayPanel();
+  resizeToContent();
+}
+// 창이 다시 포커스를 얻으면(클릭해서 돌아옴) 접어뒀던 걸 원래대로 펼침
+function restoreOverlaysOnFocus() {
+  document.getElementById('app').classList.remove('unfocused');
+  resizeToContent();
 }
 
 async function onSaveEvent() {

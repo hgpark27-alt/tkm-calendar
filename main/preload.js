@@ -12,5 +12,10 @@ contextBridge.exposeInMainWorld('api', {
     const handler = () => cb()
     ipcRenderer.on('win-blur', handler)
     return () => ipcRenderer.removeListener('win-blur', handler)
+  },
+  onFocus: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on('win-focus', handler)
+    return () => ipcRenderer.removeListener('win-focus', handler)
   }
 })
