@@ -300,7 +300,7 @@ body {
 .todo-input {
   width: 100%;
   font: inherit;
-  font-size: 18px;
+  font-size: 15px;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -328,7 +328,7 @@ body {
   color: #fff;
 }
 .todo-check.done { background: var(--accent); border-color: var(--accent); font-size: 12px; }
-.todo-text { flex: 1; min-width: 0; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-text { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-text.done { text-decoration: line-through; color: var(--text-soft); }
 .todo-del { background: none; border: none; color: var(--text-soft); font-size: 16px; cursor: pointer; padding: 0 4px; flex-shrink: 0; }
 .todo-del:hover { color: var(--danger); }
