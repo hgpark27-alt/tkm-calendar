@@ -38,6 +38,9 @@ function doGet(e) {
     if (action === 'list-recurring') {
       return { series: listRecurringSeries() };
     }
+    if (action === 'holidays') {
+      return { holidays: getKrHolidays() };
+    }
     throw new Error('알 수 없는 action: ' + action);
   });
 }
@@ -257,6 +260,54 @@ function deleteEvent(eventId, deleteSeries) {
   const targetId = (deleteSeries && isInstance) ? ev.recurringEventId : eventId;
   Calendar.Events.remove(CALENDAR_ID, targetId);
   return { deletedId: targetId, wasSeries: isMaster || (deleteSeries && isInstance) };
+}
+
+// ===== 대한민국 공휴일 (프론트 표시 전용 — 우리 팀 캘린더(CALENDAR_ID) 데이터와는 완전히 무관) =====
+// 구글이 공개 제공하는 "대한민국의 휴일" 캘린더를 ICS로 그대로 받아와서 파싱함.
+// 설날/추석/부처님오신날처럼 음력 기준이라 매년 손으로 넣기 번거로운 날짜까지 자동으로 맞음.
+const KR_HOLIDAY_ICS_URL =
+  'https://calendar.google.com/calendar/ical/ko.south_korea%23holiday%40group.v.calendar.google.com/public/basic.ics';
+
+function getKrHolidays() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('kr_holidays_v1');
+  if (cached) return JSON.parse(cached);
+
+  const ics = UrlFetchApp.fetch(KR_HOLIDAY_ICS_URL).getContentText();
+  const result = parseKrHolidayIcs_(ics);
+
+  try { cache.put('kr_holidays_v1', JSON.stringify(result), 21600); } catch (err) {} // 6시간(최대) 캐시 — 실패해도 무시하고 계속 진행
+  return result;
+}
+
+// ICS의 각 VEVENT는 DTSTART;VALUE=DATE:YYYYMMDD + SUMMARY + DESCRIPTION 한 줄짜리라 파싱이 단순함
+// (긴 줄 접힘(line folding)은 이 필드들엔 사실상 안 나와서 별도 처리 안 함).
+// DESCRIPTION이 정확히 "공휴일"인 것만 실제 빨간날 — "기념일"(국군의날/어버이날 등)은 제외.
+function parseKrHolidayIcs_(ics) {
+  const lines = ics.split(/\r?\n/);
+  const result = {};
+  let cur = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (line === 'END:VEVENT') {
+      if (cur && cur.date && cur.summary && cur.isHoliday) {
+        result[cur.date] = result[cur.date] ? (result[cur.date] + ' / ' + cur.summary) : cur.summary;
+      }
+      cur = null;
+      continue;
+    }
+    if (!cur) continue;
+    if (line.indexOf('DTSTART;VALUE=DATE:') === 0) {
+      const raw = line.split(':')[1].trim();
+      cur.date = raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);
+    } else if (line.indexOf('SUMMARY:') === 0) {
+      cur.summary = line.slice('SUMMARY:'.length).trim();
+    } else if (line === 'DESCRIPTION:공휴일') {
+      cur.isHoliday = true;
+    }
+  }
+  return result;
 }
 
 // ===== 배포 후 스스로 테스트용 (Apps Script 편집기에서 이 함수를 직접 실행해보면 됨) =====

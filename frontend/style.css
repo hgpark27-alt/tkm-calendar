@@ -191,6 +191,7 @@ body {
 .cell.outside .daynum { color: #c7c7cc; }
 .cell.sun .daynum { color: #e67c73; }
 .cell.sat .daynum { color: var(--accent); }
+.cell.holiday .daynum { color: #e67c73; } /* 일요일과 같은 빨강 — "쉬는 날" 톤 통일 */
 
 .daynum {
   font-size: 14px;
@@ -249,6 +250,11 @@ body {
 }
 .hover-tip-time { font-size: 10px; color: var(--accent); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .hover-tip-more { font-size: 10px; color: var(--text-soft); }
+.hover-tip-holiday {
+  font-size: 11.5px; font-weight: 700; color: #e67c73;
+  padding-bottom: 4px; margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
 
 /* ── 최대 모드: 점 대신 셀 안에 업무 제목까지 표시 ─────────────────────────── */
 .grid.mode-max .cell {

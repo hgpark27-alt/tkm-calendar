@@ -148,6 +148,52 @@ const weekdayOf = (dateStr) => {
   return WEEKDAY_ABBR[new Date(y, m - 1, d).getDay()];
 };
 
+// ===== 대한민국 공휴일 (프론트에서 표시용 — 구글 캘린더(우리 팀 일정) 데이터엔 전혀 영향 없음) =====
+// 구글이 공개 제공하는 "대한민국의 휴일" 캘린더(ICS)를 백엔드에서 받아와 덮어씀(init() 참고) —
+// 설날/추석/부처님오신날처럼 음력 기준이라 매년 손으로 넣기 번거로운 날짜까지 자동으로 반영됨.
+// 아래 값은 그 요청이 실패하거나(네트워크 문제 등) 아직 안 끝났을 때 쓰는 폴백 겸 초기값.
+let KR_HOLIDAYS = {
+  '2026-01-01': '신정',
+  '2026-02-16': '설날 연휴',
+  '2026-02-17': '설날',
+  '2026-02-18': '설날 연휴',
+  '2026-03-01': '삼일절',
+  '2026-03-02': '대체공휴일 (삼일절)',
+  '2026-05-05': '어린이날',
+  '2026-05-24': '부처님오신날',
+  '2026-05-25': '대체공휴일 (부처님오신날)',
+  '2026-06-06': '현충일',
+  '2026-08-15': '광복절',
+  '2026-08-17': '대체공휴일 (광복절)',
+  '2026-09-24': '추석 연휴',
+  '2026-09-25': '추석',
+  '2026-09-26': '추석 연휴',
+  '2026-10-03': '개천절',
+  '2026-10-05': '대체공휴일 (개천절)',
+  '2026-10-09': '한글날',
+  '2026-12-25': '크리스마스',
+  '2027-01-01': '신정',
+  '2027-02-06': '설날 연휴',
+  '2027-02-07': '설날',
+  '2027-02-08': '설날 연휴',
+  '2027-02-09': '대체공휴일 (설날)',
+  '2027-03-01': '삼일절',
+  '2027-05-05': '어린이날',
+  '2027-05-13': '부처님오신날',
+  '2027-06-06': '현충일',
+  '2027-08-15': '광복절',
+  '2027-08-16': '대체공휴일 (광복절)',
+  '2027-09-24': '추석 연휴',
+  '2027-09-25': '추석',
+  '2027-09-26': '추석 연휴',
+  '2027-10-03': '개천절',
+  '2027-10-04': '대체공휴일 (개천절)',
+  '2027-10-09': '한글날',
+  '2027-10-11': '대체공휴일 (한글날)',
+  '2027-12-25': '크리스마스',
+  '2027-12-27': '대체공휴일 (크리스마스)',
+};
+
 // ===== API 호출 =====
 async function apiGet(params) {
   // 조회 URL이 매번 동일해서 브라우저가 캐시된 응답을 재사용할 수 있음 — 매 호출 고유 값으로 무효화
@@ -243,6 +289,14 @@ async function init() {
     if (catRes.ok) state.categories = catRes.categories;
   });
 
+  // 공휴일도 백그라운드 로드 — 받아오면 위에 넣어둔 폴백 값을 덮어쓰고 다시 그림
+  apiGet({ action: 'holidays' }).then(holRes => {
+    if (holRes.ok && holRes.holidays) {
+      KR_HOLIDAYS = { ...KR_HOLIDAYS, ...holRes.holidays };
+      renderGrid();
+    }
+  });
+
   // 다른 팀원이 네이티브 캘린더에서 바꾼 내용을 자동 반영 — 진짜 웹훅 대신 가벼운 폴링/포커스 갱신
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') loadMonth();
@@ -314,10 +368,16 @@ function renderMonthTitle() {
   $('#monthTitle').textContent = `${MONTH_EN[state.month - 1]} ${state.year}`;
 }
 
-// 심플모드 날짜 위에 마우스 올리면 바로(지연 없이) 뜨는 일정 미리보기 — 드롭다운처럼
-function showHoverTip(cellEl, events) {
+// 날짜 위에 마우스 올리면 바로(지연 없이) 뜨는 일정/공휴일 미리보기 — 드롭다운처럼
+function showHoverTip(cellEl, events, holidayName) {
   const tip = $('#hoverTip');
   tip.innerHTML = '';
+  if (holidayName) {
+    const row = document.createElement('div');
+    row.className = 'hover-tip-holiday';
+    row.textContent = holidayName;
+    tip.appendChild(row);
+  }
   events.slice(0, 6).forEach(ev => {
     const row = document.createElement('div');
     row.className = 'hover-tip-row';
@@ -350,8 +410,9 @@ function showHoverTip(cellEl, events) {
   const tipRect = tip.getBoundingClientRect();
   let left = cellRect.left + cellRect.width / 2 - tipRect.width / 2;
   left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
-  let top = cellRect.bottom + 4;
-  if (top + tipRect.height > window.innerHeight - 4) top = cellRect.top - tipRect.height - 4;
+  // 아래로 열면 마우스 커서가 미리보기를 가려서 위쪽을 우선으로 함 — 위쪽 공간 부족할 때만 아래로
+  let top = cellRect.top - tipRect.height - 4;
+  if (top < 4) top = cellRect.bottom + 4;
   tip.style.left = `${left}px`;
   tip.style.top = `${top}px`;
 }
@@ -415,6 +476,12 @@ function renderGrid() {
     if (key === tKey) div.classList.add('today');
     if (key === state.selectedDate) div.classList.add('selected');
 
+    const holidayName = !cellInfo.outside ? KR_HOLIDAYS[key] : null; // 지난달/다음달 칸은 회색 유지
+    if (holidayName) {
+      div.classList.add('holiday');
+      div.title = holidayName; // 네이티브 툴팁(빠른 확인용) — 아래 mouseenter 미리보기도 같이 표시
+    }
+
     const num = document.createElement('div');
     num.className = 'daynum';
     num.textContent = cellInfo.day;
@@ -464,9 +531,11 @@ function renderGrid() {
     }
 
     // 심플모드는 제목이 안 보이니까(점만 표시) 마우스 올리면 작은 미리보기로 보여줌 —
-    // 맥스모드는 이미 칸 안에 제목이 나와 있어서 필요 없음
-    if (state.viewMode === 'simple' && dayEvents.length) {
-      div.addEventListener('mouseenter', () => showHoverTip(div, dayEvents));
+    // 맥스모드는 이미 칸 안에 제목이 나와 있어서 일정 목록은 필요 없지만, 공휴일 이름은
+    // 어차피 안 보이니 공휴일이 있는 날짜는 맥스모드에서도 미리보기를 띄움
+    if (holidayName || (state.viewMode === 'simple' && dayEvents.length)) {
+      const tipEvents = state.viewMode === 'simple' ? dayEvents : [];
+      div.addEventListener('mouseenter', () => showHoverTip(div, tipEvents, holidayName));
       div.addEventListener('mouseleave', hideHoverTip);
     }
 
