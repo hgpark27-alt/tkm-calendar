@@ -297,6 +297,14 @@ async function init() {
     resizeRaf = requestAnimationFrame(() => { resizeRaf = null; resizeToContent(); });
   }).observe(document.getElementById('app'));
 
+  // 위 감시로도 가끔 창이 실제 내용보다 크게 남는 경우가 있어서(정확한 재현 조건을
+  // 못 찾음) — 모달이 안 열려있을 때 주기적으로 한 번씩 더 맞춰서 결국엔 항상 맞게 함
+  setInterval(() => {
+    if ($('#modalBackdrop').classList.contains('open')) return;
+    if ($('#recurringBackdrop').classList.contains('open')) return;
+    resizeToContent();
+  }, 700);
+
   // 카테고리는 백그라운드 로드 — "+" 모달 열기 전까지는 필요 없음
   apiGet({ action: 'categories' }).then(catRes => {
     if (catRes.ok) state.categories = catRes.categories;
