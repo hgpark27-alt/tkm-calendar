@@ -20,11 +20,6 @@ contextBridge.exposeInMainWorld('api', {
   },
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   toggleAutoLaunch: () => ipcRenderer.invoke('toggle-auto-launch'),
-  onHandleDblClick: (cb) => {
-    const handler = () => cb()
-    ipcRenderer.on('handle-dblclick', handler)
-    return () => ipcRenderer.removeListener('handle-dblclick', handler)
-  },
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   onUpdateStatus: (cb) => {
     const handler = (_e, data) => cb(data)

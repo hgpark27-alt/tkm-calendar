@@ -362,16 +362,6 @@ async function init() {
     if (e.target.closest('.todo-check') || e.target.closest('.todo-del')) return; // 체크박스/삭제만 접힌 채로 처리, My Notes 나머지 부분은 눌러도 펼쳐짐
     restoreOverlaysOnFocus();
   });
-  // 손잡이 더블클릭하면 펼쳐지게 — 기존 트리거(손잡이 밖 클릭)는 그대로 유지.
-  // -webkit-app-region:drag 영역에서 더블클릭하면 Windows가 OS 레벨에서 "제목표시줄 더블클릭"으로
-  // 인식해 먼저 최대화를 시도함(그래서 잠깐 커졌다 되돌아오는 경련이 생겼던 것) — 렌더러의
-  // click/dblclick/mousedown으로는 이 제스처를 못 잡아서, main 프로세스가 그 최대화 시도 자체를
-  // 감지해 신호를 보내주는 방식으로 처리함 (main/index.js의 win.on('maximize', ...) 참고)
-  window.api?.onHandleDblClick?.(() => {
-    const app = document.getElementById('app');
-    if (app.classList.contains('unfocused')) restoreOverlaysOnFocus();
-  });
-
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
   new ResizeObserver(() => {

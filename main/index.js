@@ -100,12 +100,8 @@ function createWindow() {
   })
 
   // 타이틀바(app-region: drag)를 더블클릭하면 Windows가 자동으로 전체화면 처리해버림 —
-  // 위젯이라 원하는 동작이 아니라서, 최대화되면 즉시 되돌림. 이 이벤트가 곧 "손잡이 더블클릭"이므로
-  // (렌더러 쪽 click/dblclick으로는 이 OS 제스처를 못 잡음) 접힘모드를 펼치라는 신호로도 같이 씀
-  win.on('maximize', () => {
-    win.unmaximize()
-    win.webContents.send('handle-dblclick')
-  })
+  // 위젯이라 원하는 동작이 아니라서, 최대화되면 즉시 되돌림
+  win.on('maximize', () => win.unmaximize())
 
   // Tack처럼 창이 포커스를 잃으면(다른 데 클릭) 열려있던 모달/팝업을 닫음
   win.on('blur', () => win.webContents.send('win-blur'))
