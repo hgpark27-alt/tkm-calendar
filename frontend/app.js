@@ -160,7 +160,6 @@ function deleteTodo(id) {
 
 // ===== 설정 =====
 const API_URL = 'https://script.google.com/macros/s/AKfycbybOFKkrFU7No0cJS1LG2rKVjXyTWcY5f2vYxEoEAPGWq6ckGBIPGACPcb0PrHP-Hb9yg/exec';
-const WIDGET_W = 243; // main/index.js의 창 너비와 일치 (기존 304의 80%)
 const WIDGET_MAX_H = 700;
 // 모달은 내용(반복 필드 펼침 등)에 따라 매번 정확히 측정하려다가 계속 버그가 났음(줌 배율,
 // 타이밍 등) — 모달 자체가 이미 max-height:86vh + overflow-y:auto라 넘치면 알아서 스크롤되니,
@@ -174,9 +173,13 @@ const MODAL_FIXED_H = 620;
 // innerHeight는 실제 줌 적용된(진짜 화면) 좌표계임. 이 둘을 그냥 섞어 써서 창이 항상 실제
 // 필요한 크기의 1.25배로 큼직하게 잡혔던 게 원인 (실측: #app.offsetWidth=304인데
 // window.innerWidth=243, 304/243=1.25=1/0.8 — 정확히 일치). #app 쪽은 이 보정을 그대로 씀.
+// 폭은 이제 우하단 핸들로 사용자가 직접 조절함(main/index.js resizable:true) — 여기서는
+// "지금 창의 실제 폭"을 그대로 유지하면서 높이만 내용에 맞게 다시 잡음. WIDGET_W 같은 고정값을
+// 쓰면 사용자가 넓혀놓은 폭을 매번 되돌려버리게 되므로 반드시 window.innerWidth를 그대로 씀
 function resizeToContent() {
+  const currentW = window.innerWidth;
   if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open')) {
-    window.api?.resize?.(WIDGET_W, MODAL_FIXED_H);
+    window.api?.resize?.(currentW, MODAL_FIXED_H);
     return;
   }
   // getBoundingClientRect는 소수점까지 정확 — scrollHeight(정수 반올림)로는
@@ -187,7 +190,7 @@ function resizeToContent() {
   const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
   const zoomedTarget = target * bodyZoom;
   const requestedH = Math.min(Math.ceil(Math.max(zoomedTarget, 120)) + 6, WIDGET_MAX_H);
-  window.api?.resize?.(WIDGET_W, requestedH);
+  window.api?.resize?.(currentW, requestedH);
 }
 
 const DOT_COLOR = { // colorId → CSS 변수 (style.css의 --c1~--c11과 매칭)

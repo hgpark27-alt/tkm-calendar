@@ -59,14 +59,19 @@ function createWindow() {
   const pinned = prefs.pinned !== false // 기본값 true
 
   win = new BrowserWindow({
-    width: W,
+    width: prefs.width || W,
     height: H_INITIAL,
+    minWidth: 200,
+    minHeight: 100,
     x: prefs.pos?.x,
     y: prefs.pos?.y,
     frame: false,
     icon: path.join(__dirname, '..', 'build', 'icon.ico'), // 기본 Electron 아이콘 대신 TKM 아이콘 — 개발모드 실행 시에도 적용됨
     alwaysOnTop: pinned,
-    resizable: false, // 사용자가 직접 드래그로 리사이즈 못 함 — 내용 크기에 맞춰 자동으로만 조절됨
+    // 우하단 핸들로 폭을 늘려서 긴 글자(일정 제목 등)가 안 잘리게 볼 수 있게 함 —
+    // 높이는 여전히 내용에 맞춰 자동 조절(resizeToContent가 매번 다시 맞춤), 폭만 사용자가
+    // 바꾼 값을 기억해서 유지함(main/index.js의 close 핸들러 + app.js의 window.innerWidth 사용 참고)
+    resizable: true,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -91,7 +96,7 @@ function createWindow() {
   win.on('close', () => {
     const b = win.getBounds()
     const p = loadPrefs()
-    savePrefs({ ...p, pos: { x: b.x, y: b.y } })
+    savePrefs({ ...p, pos: { x: b.x, y: b.y }, width: b.width })
   })
 
   // 타이틀바(app-region: drag)를 더블클릭하면 Windows가 자동으로 전체화면 처리해버림 —
