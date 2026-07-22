@@ -1,6 +1,6 @@
 {
   "name": "tkm-calendar",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "TKM Calendar — shared team calendar widget",
   "main": "main/index.js",
   "author": "Hansol IONES",
@@ -12,6 +12,7 @@
   "build": {
     "appId": "com.hansolliones.tkmcalendar",
     "productName": "TKM Calendar",
+    "compression": "maximum",
     "files": [
       "main/**/*",
       "frontend/**/*",
@@ -24,7 +25,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "publish": {
       "provider": "github",
