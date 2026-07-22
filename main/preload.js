@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   togglePin: () => ipcRenderer.invoke('toggle-pin'),
   getPin: () => ipcRenderer.invoke('get-pin'),
   resize: (w, h) => ipcRenderer.sendSync('win-resize', w, h),
+  moveBy: (dx, dy) => ipcRenderer.send('win-move-by', dx, dy),
   getLocalData: () => ipcRenderer.invoke('get-local-data'),
   saveLocalData: (data) => ipcRenderer.invoke('save-local-data', data),
   onBlur: (cb) => {

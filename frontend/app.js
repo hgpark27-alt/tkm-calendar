@@ -351,34 +351,43 @@ async function init() {
     $('#autoLaunchBtn')?.classList.toggle('active', !!on);
   });
 
+  // 커스텀 드래그 이동(-webkit-app-region:drag 대신) — 그 CSS를 쓰면 Windows가 이 영역의
+  // 마우스 이벤트를 OS 레벨에서 가로채서 click/dblclick 자체가 렌더러에 전혀 안 들어오는 문제가
+  // 실측으로 확인됐음. 그래서 직접 mousedown/mousemove로 창을 옮김 — 더블클릭 구분은 포기하고
+  // 그냥 "드래그로 움직이지 않았으면 클릭 한 번으로 펼침, 움직였으면 이동만"으로 단순화함
+  function isDragArea(target) {
+    if (target.closest('button')) return false; // 아이콘/이전달/다음달 버튼 등은 제외
+    if (target.closest('.title-bar')) return true;
+    if (document.getElementById('app').classList.contains('unfocused') && target.closest('.topbar')) return true;
+    return false;
+  }
+  let dragStart = null;
+  let dragMoved = false; // 드래그로 창을 옮긴 직후엔 그 뒤에 뜨는 click으로 펼쳐지지 않게 막는 용도
+  document.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !isDragArea(e.target)) return;
+    dragStart = { x: e.screenX, y: e.screenY };
+    dragMoved = false;
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragStart) return;
+    const dx = e.screenX - dragStart.x, dy = e.screenY - dragStart.y;
+    if (!dx && !dy) return;
+    dragMoved = true;
+    window.api?.moveBy?.(dx, dy);
+    dragStart = { x: e.screenX, y: e.screenY };
+  });
+  document.addEventListener('mouseup', () => { dragStart = null; });
+
   // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리하고 달력만 남김
   window.api?.onBlur?.(closeAllOverlaysOnBlur);
-  // 포커스를 얻는 것 자체(win-focus)로는 안 펼침 — 손잡이(타이틀바)를 눌러서 창을 옮기기만 해도
-  // OS 포커스는 얻어지기 때문에, 펼치는 건 "타이틀바 밖을 실제로 클릭했을 때"로만 판단함
+  // 포커스를 얻는 것 자체(win-focus)로는 안 펼침 — 손잡이를 눌러서 창을 옮기기만 해도
+  // OS 포커스는 얻어지기 때문에, 펼치는 건 "실제로 클릭(드래그 아님)했을 때"로만 판단함
   document.addEventListener('click', (e) => {
     const app = document.getElementById('app');
     if (!app.classList.contains('unfocused')) return;
-    if (e.target.closest('.title-bar')) return; // 손잡이 한 번 클릭/드래그는 이동만, 펼치지 않음
+    if (dragMoved) { dragMoved = false; return; } // 방금 드래그로 옮긴 거면 무시(어디서 손을 떼든 펼쳐지면 안 됨)
     if (e.target.closest('.todo-check') || e.target.closest('.todo-del')) return; // 체크박스/삭제만 접힌 채로 처리, My Notes 나머지 부분은 눌러도 펼쳐짐
     restoreOverlaysOnFocus();
-  });
-  // 손잡이(상단부)는 더블클릭하면 펼쳐짐 — maximizable:false로 막아놔서 이제 Windows가
-  // 더블클릭을 최대화 제스처로 가로채지 않으니 일반 dblclick이 정상적으로 들어옴.
-  // 접힘모드에서는 .title-bar(손잡이)뿐 아니라 .topbar(월 표시줄, "Jul 2026")도 드래그 영역이라
-  // 사용자가 거기를 더블클릭하는 경우가 많음 — 둘 다 잡아야 함
-  // -webkit-app-region:drag 영역에서는 Windows가 click/dblclick 자체를 아예 안 보내주는 경우가
-  // 많아서(더블클릭도 안 먹힘 확인됨) mousedown 타이밍을 직접 재서 더블클릭을 판정함.
-  // maximizable:false라 이제 네이티브 최대화 제스처가 안 걸리니 이 방식이 부작용 없이 동작함
-  let lastDragMouseDown = 0;
-  document.addEventListener('mousedown', (e) => {
-    if (!e.target.closest('.title-bar') && !e.target.closest('.topbar')) return;
-    if (e.target.closest('button')) return; // 아이콘/이전달/다음달 버튼 등은 제외
-    const now = Date.now();
-    const isDoubleClick = now - lastDragMouseDown < 400;
-    lastDragMouseDown = now;
-    if (!isDoubleClick) return;
-    const app = document.getElementById('app');
-    if (app.classList.contains('unfocused')) restoreOverlaysOnFocus();
   });
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;

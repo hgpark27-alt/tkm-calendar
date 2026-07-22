@@ -156,6 +156,14 @@ ipcMain.on('win-resize', (e, w, h) => {
   e.returnValue = null
 })
 
+// -webkit-app-region:drag 대신 쓰는 커스텀 드래그 이동 — 렌더러가 mousemove 델타를 보내주면
+// 그만큼 창 위치를 옮김(OS 드래그 영역으로 지정하면 dblclick이 아예 안 뜨는 문제가 있어서 이렇게 함)
+ipcMain.on('win-move-by', (e, dx, dy) => {
+  if (!win) return
+  const [x, y] = win.getPosition()
+  win.setPosition(Math.round(x + dx), Math.round(y + dy))
+})
+
 // 자동 업데이트 상태를 렌더러(톱니 메뉴)에도 보여주기 위해 이벤트를 그대로 전달
 function sendUpdateStatus(status, extra) {
   win?.webContents.send('update-status', { status, extra })
