@@ -1,6 +1,6 @@
 // ===== 로컬 전용 데이터 (구글 캘린더로 절대 안 올라감 — 이 컴퓨터에만 저장) =====
 // Electron이면 main 프로세스가 파일로 원자적 저장(Tack 방식), 브라우저 테스트 중이면 localStorage로 대체
-let localData = { recentTasks: [], personalTodos: [] };
+let localData = { recentTasks: [], personalTodos: [], personalEvents: [] };
 
 async function loadLocalData() {
   if (window.api?.getLocalData) {
@@ -10,6 +10,13 @@ async function loadLocalData() {
   }
   localData.recentTasks ??= [];
   localData.personalTodos ??= [];
+  localData.personalEvents ??= []; // "Personal" 일정 — 구글 캘린더로 절대 안 올라가고 이 컴퓨터에만 저장
+}
+
+// 개인 일정 중 특정 달에 속하는 것만 골라서 팀 일정과 같은 모양으로 반환(그리드/일정패널에 같이 섞어 씀)
+function personalEventsForMonth(y, m) {
+  const prefix = `${y}-${pad2(m)}`;
+  return localData.personalEvents.filter(e => e.date.startsWith(prefix)).map(e => ({ ...e, isPersonal: true }));
 }
 function persistLocalData() {
   if (window.api?.saveLocalData) window.api.saveLocalData(localData);
@@ -131,6 +138,7 @@ const state = {
   categories: {},           // { '미팅': '9', ... } — 백엔드에서 로드
   loadedYear: null, loadedMonth: null, // 마지막으로 실제 로드 완료한 달 (같은 달 재동기화 시 깜빡임 방지용)
   editingId: null,          // null이면 추가 모드, 값이 있으면 그 이벤트를 수정 중
+  editingIsPersonal: false, // 수정 중인 이벤트가 Personal(로컬 전용)인지 Team Post(구글 캘린더)인지
   viewMode: 'simple',       // 'simple' | 'max'
   dayPanelCollapsed: false, // 최대 모드에서만 의미 있음 (간단 모드는 항상 펼침)
 };
@@ -437,7 +445,7 @@ function renderGrid() {
   const daysInPrevMonth = new Date(state.year, state.month - 1, 0).getDate();
 
   const eventsByDate = {};
-  for (const ev of state.events) {
+  for (const ev of [...state.events, ...personalEventsForMonth(state.year, state.month)]) {
     (eventsByDate[ev.date] ??= []).push(ev);
   }
 
@@ -535,12 +543,16 @@ function renderGrid() {
       }
     }
 
-    // 심플모드는 제목이 안 보이니까(점만 표시) 마우스 올리면 작은 미리보기로 보여줌 —
-    // 맥스모드는 이미 칸 안에 제목이 나와 있어서 일정 목록은 필요 없지만, 공휴일 이름은
-    // 어차피 안 보이니 공휴일이 있는 날짜는 맥스모드에서도 미리보기를 띄움
-    if (holidayName || (state.viewMode === 'simple' && dayEvents.length)) {
-      const tipEvents = state.viewMode === 'simple' ? dayEvents : [];
-      div.addEventListener('mouseenter', () => showHoverTip(div, tipEvents, holidayName));
+    // 접힘 모드에서만 마우스 올리면 미리보기 — 펼친 상태에선 클릭하면 바로 아래 일정 패널이
+    // 열리니 호버 미리보기가 굳이 필요 없음. renderGrid가 다른 시점(포커스 복귀 등)에 다시
+    // 안 불려도 항상 최신 상태를 반영하도록 리스너 안에서 그때그때 판단함
+    if (holidayName || dayEvents.length) {
+      div.addEventListener('mouseenter', () => {
+        const collapsed = document.getElementById('app').classList.contains('unfocused');
+        if (!collapsed) return;
+        const tipEvents = state.viewMode === 'simple' ? dayEvents : [];
+        showHoverTip(div, tipEvents, holidayName);
+      });
       div.addEventListener('mouseleave', hideHoverTip);
     }
 
@@ -578,7 +590,8 @@ function renderDayPanel() {
   const dow = WEEKDAY_EN[new Date(y, m-1, d).getDay()];
   label.textContent = `${dow}, ${MONTH_EN[m - 1]} ${d}`;
 
-  const dayEvents = state.events.filter(ev => ev.date === state.selectedDate);
+  const dayEvents = [...state.events, ...personalEventsForMonth(state.year, state.month)]
+    .filter(ev => ev.date === state.selectedDate);
   if (!dayEvents.length) {
     // 안내 문구 대신 그냥 비워둠 — 창 높이가 자동으로 그만큼 줄어듦
     return;
@@ -610,7 +623,7 @@ function renderDayPanel() {
       timeEl.textContent = ev.time;
       meta.appendChild(timeEl);
     }
-    const rest = [ev.category, ev.author, ev.isRecurring ? '↻ 반복' : ''].filter(Boolean).join(' · ');
+    const rest = [ev.isPersonal ? 'Personal' : null, ev.category, ev.author, ev.isRecurring ? '↻ 반복' : ''].filter(Boolean).join(' · ');
     if (rest) meta.appendChild(document.createTextNode((!ev.allDay && ev.time ? ' · ' : '') + rest));
     body.appendChild(meta);
 
@@ -642,6 +655,14 @@ function renderDayPanel() {
 // ===== 삭제 =====
 async function onDelete(ev) {
   if (!confirm(`"${ev.title}" 일정을 삭제할까요?`)) return;
+
+  if (ev.isPersonal) {
+    localData.personalEvents = localData.personalEvents.filter(e => e.id !== ev.id);
+    persistLocalData();
+    renderGrid();
+    renderDayPanel();
+    return;
+  }
 
   const myName = localStorage.getItem('tkm_username') || '';
   if (ev.author && myName && ev.author.trim() !== myName.trim()) {
@@ -714,6 +735,7 @@ function renderCatChips(activeCategory) {
 
 function openAddModal() {
   state.editingId = null;
+  state.editingIsPersonal = false;
   $('#modalTitle').textContent = 'Add Event';
   $('#fDate').value = state.selectedDate || todayKey();
   $('#fTime').value = ''; // 비워두면 하루종일 — 억지로 기본 시간을 채우지 않음
@@ -722,7 +744,8 @@ function openAddModal() {
   $('#fRepeat').value = 'none';
   $('#fIntervalDays').value = 3;
   $('#fUntil').value = '';
-  $('#repeatRow').hidden = false;
+  setScopeToggle('personal', false); // 필수 선택, 기본값 Personal
+  $('#repeatRow').hidden = true; // Personal은 반복 미지원 — Team Post로 바꿔야 나타남
   $('#biweeklyRow').hidden = true;
   $('#customRow').hidden = true;
   $('#untilRow').hidden = true;
@@ -734,13 +757,22 @@ function openAddModal() {
   resizeToContent();
 }
 
+// Personal/Team Post 토글 — 수정 중일 땐 저장소를 옮기는 복잡도를 피하려고 고정(locked)해둠
+function setScopeToggle(scope, locked) {
+  const wrap = $('#scopeToggle');
+  wrap.classList.toggle('locked', !!locked);
+  wrap.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === scope));
+}
+
 function openEditModal(ev) {
   state.editingId = ev.id;
+  state.editingIsPersonal = !!ev.isPersonal;
   $('#modalTitle').textContent = 'Edit Event';
   $('#fDate').value = ev.date;
   $('#fTime').value = ev.allDay ? '' : (ev.time || '');
   $('#fTitle').value = ev.title;
   $('#fAuthor').value = ev.author || '';
+  setScopeToggle(ev.isPersonal ? 'personal' : 'team', true);
   // 수정 모드에서는 반복 패턴 자체는 바꾸지 않음(복잡도 방지) — 삭제 후 재등록으로 안내
   $('#repeatRow').hidden = true;
   $('#biweeklyRow').hidden = true;
@@ -818,8 +850,17 @@ async function onSaveEvent() {
 
   if (author) localStorage.setItem('tkm_username', author);
 
+  const scopeBtn = $('#scopeToggle .scope-btn.active');
+  const isPersonal = state.editingId ? state.editingIsPersonal : (scopeBtn?.dataset.scope !== 'team');
+
   if (state.editingId) {
-    await saveEdit(state.editingId, { title, date, time: time || null, category, author });
+    if (isPersonal) saveEditPersonal(state.editingId, { title, date, time: time || null, category, author });
+    else await saveEdit(state.editingId, { title, date, time: time || null, category, author });
+    return;
+  }
+
+  if (isPersonal) {
+    saveNewPersonal({ title, date, time: time || null, category, author });
     return;
   }
 
@@ -907,6 +948,39 @@ async function saveEdit(id, fields) {
   }
 
   await loadMonth();
+}
+
+// ===== Personal 일정 저장/수정 (로컬 전용 — 네트워크 없이 바로 반영, 반복 미지원) =====
+function saveNewPersonal({ title, date, time, category, author }) {
+  localData.personalEvents.push({
+    id: 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+    title, date, time, allDay: !time,
+    category, author, colorId: state.categories[category] || '8',
+    isRecurring: false
+  });
+  persistLocalData();
+  state.selectedDate = date;
+  closeAddModal();
+  renderGrid();
+  renderDayPanel();
+  trackRecentTask(title);
+}
+
+function saveEditPersonal(id, fields) {
+  const idx = localData.personalEvents.findIndex(e => e.id === id);
+  if (idx >= 0) {
+    localData.personalEvents[idx] = {
+      ...localData.personalEvents[idx],
+      title: fields.title, date: fields.date,
+      time: fields.time, allDay: !fields.time,
+      category: fields.category, author: fields.author,
+      colorId: state.categories[fields.category] || '8'
+    };
+    persistLocalData();
+  }
+  closeAddModal();
+  renderGrid();
+  renderDayPanel();
 }
 
 // ===== Recurring event management =====
@@ -1060,6 +1134,23 @@ function bindEvents() {
   $('#weekdayPicker').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-day]');
     if (btn) btn.classList.toggle('active');
+  });
+
+  // ── Personal / Team Post 토글 ── (수정 중엔 locked라 클릭해도 안 바뀜)
+  $('#scopeToggle').addEventListener('click', (e) => {
+    if ($('#scopeToggle').classList.contains('locked')) return;
+    const btn = e.target.closest('.scope-btn');
+    if (!btn) return;
+    const isPersonal = btn.dataset.scope === 'personal';
+    setScopeToggle(btn.dataset.scope, false);
+    if (isPersonal) {
+      $('#fRepeat').value = 'none';
+      $('#biweeklyRow').hidden = true;
+      $('#customRow').hidden = true;
+      $('#untilRow').hidden = true;
+    }
+    $('#repeatRow').hidden = isPersonal; // Personal은 반복 미지원(단순화)
+    resizeToContent();
   });
 
   // ── 수동 새로고침 ──

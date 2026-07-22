@@ -479,6 +479,24 @@ body {
 }
 .field-primary input::placeholder { color: var(--accent); opacity: 0.6; }
 
+/* 개인/팀게시 선택 — 어디에 저장할지 결정하는 중요한 선택이라 제목보다 위, 맨 위에 둠 */
+.scope-toggle { display: flex; gap: 6px; margin-bottom: 14px; }
+.scope-btn {
+  flex: 1; padding: 8px 0;
+  border-radius: 9px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-soft);
+  font-size: 12.5px; font-weight: 600;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+/* accent를 글자색으로 안 쓰는 이유는 위 popover-item.active와 동일(테마별 대비 문제) */
+.scope-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.scope-toggle.locked .scope-btn { cursor: default; opacity: 0.6; }
+
+.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+
 .cat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   display: flex; align-items: center; gap: 5px;

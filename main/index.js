@@ -36,13 +36,14 @@ function loadLocalData() {
       const d = JSON.parse(fs.readFileSync(p, 'utf-8').replace(/^﻿/, ''))
       d.recentTasks ??= []
       d.personalTodos ??= []
+      d.personalEvents ??= []
       return d
     }
   } catch (err) {
     console.error('[local-data] load error:', err)
     try { fs.copyFileSync(p, p + '.corrupt.' + Date.now()) } catch {}
   }
-  return { recentTasks: [], personalTodos: [] }
+  return { recentTasks: [], personalTodos: [], personalEvents: [] }
 }
 function saveLocalData(data) {
   const p = localDataPath()
