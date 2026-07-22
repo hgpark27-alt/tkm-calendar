@@ -363,10 +363,14 @@ async function init() {
     restoreOverlaysOnFocus();
   });
   // 손잡이(상단부)는 더블클릭하면 펼쳐짐 — maximizable:false로 막아놔서 이제 Windows가
-  // 더블클릭을 최대화 제스처로 가로채지 않으니 일반 dblclick이 정상적으로 들어옴
-  $('.title-bar').addEventListener('dblclick', () => {
+  // 더블클릭을 최대화 제스처로 가로채지 않으니 일반 dblclick이 정상적으로 들어옴.
+  // 접힘모드에서는 .title-bar(손잡이)뿐 아니라 .topbar(월 표시줄, "Jul 2026")도 드래그 영역이라
+  // 사용자가 거기를 더블클릭하는 경우가 많음 — 둘 다 잡아야 함
+  document.addEventListener('dblclick', (e) => {
     const app = document.getElementById('app');
-    if (app.classList.contains('unfocused')) restoreOverlaysOnFocus();
+    if (!app.classList.contains('unfocused')) return;
+    if (!e.target.closest('.title-bar') && !e.target.closest('.topbar')) return;
+    restoreOverlaysOnFocus();
   });
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
