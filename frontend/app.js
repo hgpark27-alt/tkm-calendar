@@ -361,18 +361,14 @@ async function init() {
     if (e.target.closest('.personal-todo')) return; // 체크/삭제는 접힌 채로 그 자리에서 처리
     restoreOverlaysOnFocus();
   });
-  // 손잡이는 한 클릭으로는 안 펼쳐지지만(위), 더블클릭하면 펼쳐지게 — 기존 트리거(손잡이 밖 클릭)는 그대로 유지.
-  // -webkit-app-region:drag 영역은 Electron/Windows에서 OS가 드래그로 먼저 처리해버려서
-  // click/dblclick 이벤트가 안 뜨는 경우가 많음 — mousedown 타이밍으로 직접 더블클릭을 판정함
-  let lastHandleMouseDown = 0;
-  $('.title-bar').addEventListener('mousedown', () => {
-    const now = Date.now();
-    const isDoubleClick = now - lastHandleMouseDown < 400;
-    lastHandleMouseDown = now;
-    if (!isDoubleClick) return;
+  // 손잡이 더블클릭하면 펼쳐지게 — 기존 트리거(손잡이 밖 클릭)는 그대로 유지.
+  // -webkit-app-region:drag 영역에서 더블클릭하면 Windows가 OS 레벨에서 "제목표시줄 더블클릭"으로
+  // 인식해 먼저 최대화를 시도함(그래서 잠깐 커졌다 되돌아오는 경련이 생겼던 것) — 렌더러의
+  // click/dblclick/mousedown으로는 이 제스처를 못 잡아서, main 프로세스가 그 최대화 시도 자체를
+  // 감지해 신호를 보내주는 방식으로 처리함 (main/index.js의 win.on('maximize', ...) 참고)
+  window.api?.onHandleDblClick?.(() => {
     const app = document.getElementById('app');
-    if (!app.classList.contains('unfocused')) return;
-    restoreOverlaysOnFocus();
+    if (app.classList.contains('unfocused')) restoreOverlaysOnFocus();
   });
 
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
