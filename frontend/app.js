@@ -361,8 +361,15 @@ async function init() {
     if (e.target.closest('.personal-todo')) return; // 체크/삭제는 접힌 채로 그 자리에서 처리
     restoreOverlaysOnFocus();
   });
-  // 손잡이는 한 클릭으로는 안 펼쳐지지만(위), 더블클릭하면 펼쳐지게 — 기존 트리거(손잡이 밖 클릭)는 그대로 유지
-  $('.title-bar').addEventListener('dblclick', (e) => {
+  // 손잡이는 한 클릭으로는 안 펼쳐지지만(위), 더블클릭하면 펼쳐지게 — 기존 트리거(손잡이 밖 클릭)는 그대로 유지.
+  // -webkit-app-region:drag 영역은 Electron/Windows에서 OS가 드래그로 먼저 처리해버려서
+  // click/dblclick 이벤트가 안 뜨는 경우가 많음 — mousedown 타이밍으로 직접 더블클릭을 판정함
+  let lastHandleMouseDown = 0;
+  $('.title-bar').addEventListener('mousedown', () => {
+    const now = Date.now();
+    const isDoubleClick = now - lastHandleMouseDown < 400;
+    lastHandleMouseDown = now;
+    if (!isDoubleClick) return;
     const app = document.getElementById('app');
     if (!app.classList.contains('unfocused')) return;
     restoreOverlaysOnFocus();
