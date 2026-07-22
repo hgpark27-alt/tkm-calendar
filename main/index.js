@@ -78,7 +78,9 @@ function createWindow() {
 
   if (pinned) win.setAlwaysOnTop(true, 'floating')
 
-  win.once('ready-to-show', () => win.show())
+  // alwaysOnTop + frameless 창은 처음 뜰 때 Windows가 포커스를 안 줘서 입력창에 바로
+  // 글자가 안 써지는 경우가 있다고 함 — show() 뒤에 명시적으로 focus()까지 호출해서 방지
+  win.once('ready-to-show', () => { win.show(); win.focus() })
 
   // 렌더러 console.log를 이 터미널로도 그대로 보이게 함 — 여백 버그 진단용 로그를
   // 개발자도구 안 열고 바로 여기서 확인하려고(문제 재현되면 [resize] 로그부터 확인)
@@ -158,13 +160,19 @@ function sendUpdateStatus(status, extra) {
   win?.webContents.send('update-status', { status, extra })
 }
 autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking'))
-autoUpdater.on('update-available', (info) => sendUpdateStatus('available', info.version))
+autoUpdater.on('update-available', (info) => {
+  // 있는지 없는지부터 먼저 화면에 보여주고, 그 다음 단계로 다운로드 시작 —
+  // checkForUpdatesAndNotify()는 이 둘을 구분 없이 한번에 처리해서 반응이 뭉뚱그려 보였음
+  sendUpdateStatus('available', info.version)
+  autoUpdater.downloadUpdate()
+})
+autoUpdater.on('download-progress', (p) => sendUpdateStatus('downloading', Math.round(p.percent)))
 autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'))
 autoUpdater.on('error', (err) => sendUpdateStatus('error', err?.message))
 autoUpdater.on('update-downloaded', (info) => sendUpdateStatus('downloaded', info.version))
 
 ipcMain.handle('check-for-updates', () => {
-  autoUpdater.checkForUpdatesAndNotify()
+  autoUpdater.checkForUpdates()
   return true
 })
 

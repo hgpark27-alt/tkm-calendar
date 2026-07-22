@@ -162,33 +162,31 @@ function deleteTodo(id) {
 const API_URL = 'https://script.google.com/macros/s/AKfycbybOFKkrFU7No0cJS1LG2rKVjXyTWcY5f2vYxEoEAPGWq6ckGBIPGACPcb0PrHP-Hb9yg/exec';
 const WIDGET_W = 243; // main/index.js의 창 너비와 일치 (기존 304의 80%)
 const WIDGET_MAX_H = 700;
+// 모달은 내용(반복 필드 펼침 등)에 따라 매번 정확히 측정하려다가 계속 버그가 났음(줌 배율,
+// 타이밍 등) — 모달 자체가 이미 max-height:86vh + overflow-y:auto라 넘치면 알아서 스크롤되니,
+// 그냥 넉넉한 고정 크기로 열고 모달 안쪽에서 스크롤로 해결함 (측정 안 하니 애초에 틀릴 일이 없음)
+const MODAL_FIXED_H = 620;
 
 // 항상 콘텐츠 크기만큼만 창을 차지하게 함(Electron 없으면 조용히 무시됨) — 모달/팝업은
 // #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 못 잡아서 열고닫을 때 직접 호출
-// 진짜 원인 찾음: body{zoom:0.8}가 걸려있으면 getBoundingClientRect()/offsetWidth 등은
+// 여백 버그의 진짜 원인: body{zoom:0.8}가 걸려있으면 getBoundingClientRect()/offsetWidth 등은
 // 줌이 "적용되기 전"(원래 설계 크기, 1.25배 큰) 좌표계 값을 돌려줌 — 반면 window.innerWidth/
 // innerHeight는 실제 줌 적용된(진짜 화면) 좌표계임. 이 둘을 그냥 섞어 써서 창이 항상 실제
-// 필요한 크기의 1.25배로 큼직하게 잡혔던 게 여백의 진짜 원인 (실측: #app.offsetWidth=304인데
-// window.innerWidth=243, 304/243=1.25=1/0.8 — 정확히 일치).
+// 필요한 크기의 1.25배로 큼직하게 잡혔던 게 원인 (실측: #app.offsetWidth=304인데
+// window.innerWidth=243, 304/243=1.25=1/0.8 — 정확히 일치). #app 쪽은 이 보정을 그대로 씀.
 function resizeToContent() {
-  let target, extraPad;
-  if ($('#modalBackdrop')?.classList.contains('open')) {
-    target = $('#modalBackdrop .modal').getBoundingClientRect().height;
-    extraPad = 24;
-  } else if ($('#recurringBackdrop')?.classList.contains('open')) {
-    target = $('#recurringBackdrop .modal').getBoundingClientRect().height;
-    extraPad = 24;
-  } else {
-    // getBoundingClientRect는 소수점까지 정확 — scrollHeight(정수 반올림)로는
-    // 6주짜리 달(그리드 6행)에서 반올림 오차가 누적돼 마지막 행이 잘리는 문제가 있었음
-    target = document.getElementById('app').getBoundingClientRect().height;
-    extraPad = 6;
+  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open')) {
+    window.api?.resize?.(WIDGET_W, MODAL_FIXED_H);
+    return;
   }
+  // getBoundingClientRect는 소수점까지 정확 — scrollHeight(정수 반올림)로는
+  // 6주짜리 달(그리드 6행)에서 반올림 오차가 누적돼 마지막 행이 잘리는 문제가 있었음
+  const target = document.getElementById('app').getBoundingClientRect().height;
   // CSS의 zoom 값을 하드코딩하지 않고 실제 계산된 값을 읽어서 곱함 — 나중에 zoom 값이
   // 바뀌어도 여기 코드를 따로 안 고쳐도 항상 맞게 동작함
   const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
   const zoomedTarget = target * bodyZoom;
-  const requestedH = Math.min(Math.ceil(Math.max(zoomedTarget, 120)) + extraPad, WIDGET_MAX_H);
+  const requestedH = Math.min(Math.ceil(Math.max(zoomedTarget, 120)) + 6, WIDGET_MAX_H);
   window.api?.resize?.(WIDGET_W, requestedH);
 }
 
@@ -1338,7 +1336,8 @@ function bindEvents() {
   window.api?.onUpdateStatus?.((data) => {
     const messages = {
       checking: 'Checking for updates...',
-      available: `Update found (v${data.extra}) — downloading...`,
+      available: `Update found (v${data.extra})`,
+      downloading: `Downloading update... ${data.extra}%`,
       'not-available': 'You have the latest version.',
       downloaded: `Update ready (v${data.extra}) — restart to install.`,
       error: 'Update check failed.'
