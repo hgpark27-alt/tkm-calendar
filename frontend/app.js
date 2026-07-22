@@ -258,9 +258,10 @@ function renderAll() {
   renderMonthTitle();
   renderGrid();
   renderDayPanel();
-  resizeToContent();
-  // 폰트/서브픽셀 레이아웃이 한 프레임 늦게 안정되는 경우를 대비한 안전망 재측정
-  setTimeout(resizeToContent, 50);
+  // 초기 로드 시 폰트/zoom/레이아웃이 아직 다 안정되기 전에 측정되면 실제보다 크게 잡혀서
+  // (심하면 WIDGET_MAX_H 상한까지 붙어버림) 그 뒤로 아무도 다시 줄여주지 않는 문제가 있었음 —
+  // 여러 타이밍에 걸쳐 반복 재측정해서 마지막 값이 항상 실제 크기로 맞춰지게 함
+  resettleSize();
 }
 
 // 달 단위 캐시 — 한 번 본 달은 재방문 시 네트워크 기다리지 않고 즉시 표시,
