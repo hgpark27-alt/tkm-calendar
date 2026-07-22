@@ -13,10 +13,69 @@ async function loadLocalData() {
   localData.personalEvents ??= []; // "Personal" 일정 — 구글 캘린더로 절대 안 올라가고 이 컴퓨터에만 저장
 }
 
-// 개인 일정 중 특정 달에 속하는 것만 골라서 팀 일정과 같은 모양으로 반환(그리드/일정패널에 같이 섞어 씀)
+// 개인 일정 중 특정 달에 속하는 것만 골라서 팀 일정과 같은 모양으로 반환(그리드/일정패널에 같이 섞어 씀).
+// 반복 일정(ev.repeat 있음)은 실제로 여러 건 저장하는 대신 매번 그 달 기준으로 펼쳐서 계산함
+// (구글 캘린더의 singleEvents:true 확장과 같은 개념, 다만 로컬에서 직접 계산).
 function personalEventsForMonth(y, m) {
   const prefix = `${y}-${pad2(m)}`;
-  return localData.personalEvents.filter(e => e.date.startsWith(prefix)).map(e => ({ ...e, isPersonal: true }));
+  const results = [];
+  for (const ev of localData.personalEvents) {
+    if (ev.repeat) {
+      expandPersonalRepeat(ev, y, m).forEach(date => {
+        results.push({
+          id: ev.id + '::' + date, seriesId: ev.id, date,
+          time: ev.time, allDay: ev.allDay, title: ev.title,
+          category: ev.category, author: ev.author, colorId: ev.colorId,
+          isPersonal: true, isRecurring: true
+        });
+      });
+    } else if (ev.date.startsWith(prefix)) {
+      results.push({ ...ev, isPersonal: true });
+    }
+  }
+  return results;
+}
+
+// repeat 패턴을 해당 달 범위 안에서 실제 날짜 목록으로 펼침 — buildRRule(백엔드)이 만드는
+// RRULE 문자열을 구글이 해석하는 것과 같은 규칙을 로컬에서 직접 계산한 버전
+function expandPersonalRepeat(ev, y, m) {
+  const monthStart = new Date(y, m - 1, 1);
+  const monthEnd = new Date(y, m, 0);
+  const start = new Date(ev.startDate + 'T00:00:00');
+  if (start > monthEnd) return [];
+  const until = ev.repeat.until
+    ? new Date(ev.repeat.until + 'T23:59:59')
+    : new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
+  if (until < monthStart) return [];
+  const exceptions = new Set(ev.exceptions || []);
+  const results = [];
+
+  if (ev.repeat.freq === 'custom') {
+    const interval = ev.repeat.intervalDays || 1;
+    const cur = new Date(start);
+    while (cur <= until && cur <= monthEnd) {
+      if (cur >= monthStart) {
+        const key = dateKey(cur.getFullYear(), cur.getMonth() + 1, cur.getDate());
+        if (!exceptions.has(key)) results.push(key);
+      }
+      cur.setDate(cur.getDate() + interval);
+    }
+  } else {
+    const intervalWeeks = ev.repeat.freq === 'biweekly' ? 2 : 1;
+    const byday = (ev.repeat.byday && ev.repeat.byday.length) ? ev.repeat.byday : [WEEKDAY_ABBR[start.getDay()]];
+    const startWeekSun = new Date(start);
+    startWeekSun.setDate(start.getDate() - start.getDay());
+    const rangeStart = start > monthStart ? start : monthStart;
+    for (const d = new Date(rangeStart); d <= monthEnd && d <= until; d.setDate(d.getDate() + 1)) {
+      const dow = WEEKDAY_ABBR[d.getDay()];
+      if (!byday.includes(dow)) continue;
+      const weeksSince = Math.floor((d - startWeekSun) / (7 * 86400000));
+      if (weeksSince % intervalWeeks !== 0) continue;
+      const key = dateKey(d.getFullYear(), d.getMonth() + 1, d.getDate());
+      if (!exceptions.has(key)) results.push(key);
+    }
+  }
+  return results;
 }
 function persistLocalData() {
   if (window.api?.saveLocalData) window.api.saveLocalData(localData);
@@ -665,7 +724,17 @@ async function onDelete(ev) {
   if (!safeConfirm(`"${ev.title}" 일정을 삭제할까요?`)) return;
 
   if (ev.isPersonal) {
-    localData.personalEvents = localData.personalEvents.filter(e => e.id !== ev.id);
+    if (ev.isRecurring) {
+      const deleteSeries = safeConfirm('반복 일정입니다.\n확인 = 반복 전체 삭제\n취소 = 이 날짜만 삭제');
+      if (deleteSeries) {
+        localData.personalEvents = localData.personalEvents.filter(e => e.id !== ev.seriesId);
+      } else {
+        const series = localData.personalEvents.find(e => e.id === ev.seriesId);
+        if (series) { series.exceptions ??= []; series.exceptions.push(ev.date); }
+      }
+    } else {
+      localData.personalEvents = localData.personalEvents.filter(e => e.id !== ev.id);
+    }
     persistLocalData();
     renderGrid();
     renderDayPanel();
@@ -753,7 +822,7 @@ function openAddModal() {
   $('#fIntervalDays').value = 3;
   $('#fUntil').value = '';
   setScopeToggle('personal', false); // 필수 선택, 기본값 Personal
-  $('#repeatRow').hidden = true; // Personal은 반복 미지원 — Team Post로 바꿔야 나타남
+  $('#repeatRow').hidden = false; // Personal/Team Post 둘 다 반복 지원
   $('#biweeklyRow').hidden = true;
   $('#customRow').hidden = true;
   $('#untilRow').hidden = true;
@@ -773,7 +842,8 @@ function setScopeToggle(scope, locked) {
 }
 
 function openEditModal(ev) {
-  state.editingId = ev.id;
+  // Personal 반복 일정은 화면에 펼쳐진 특정 발생일(가짜 id)이 아니라 원본 시리즈(seriesId)를 수정함
+  state.editingId = (ev.isPersonal && ev.isRecurring) ? ev.seriesId : ev.id;
   state.editingIsPersonal = !!ev.isPersonal;
   $('#modalTitle').textContent = 'Edit Event';
   $('#fDate').value = ev.date;
@@ -786,7 +856,13 @@ function openEditModal(ev) {
   $('#biweeklyRow').hidden = true;
   $('#customRow').hidden = true;
   $('#untilRow').hidden = true;
-  setHint(ev.isRecurring ? 'Recurring event — only this date will be changed. (To change the repeat pattern, delete and re-add.)' : '', 'info');
+  let hint = '';
+  if (ev.isRecurring) {
+    hint = ev.isPersonal
+      ? 'Recurring event — changes apply to the whole series. (To change the repeat pattern, delete and re-add.)'
+      : 'Recurring event — only this date will be changed. (To change the repeat pattern, delete and re-add.)';
+  }
+  setHint(hint, 'info');
   renderCatChips(ev.category);
   $('#recentChips').innerHTML = ''; // 수정 모드에서는 최근 업무 추천 안 보여줌
   $('#modalBackdrop').classList.add('open');
@@ -862,6 +938,25 @@ function restoreOverlaysOnFocus() {
   resettleSize();
 }
 
+// 모달의 반복 필드를 읽어서 { freq, byday?, intervalDays?, until? } 형태로 변환 —
+// Personal(로컬 확장)/Team Post(구글 RRULE) 둘 다 같은 입력값에서 출발
+function readRepeatFromForm() {
+  const repeatType = $('#fRepeat').value;
+  if (repeatType === 'none') return { repeat: null };
+  const repeat = { freq: repeatType };
+  if (repeatType === 'weekly' || repeatType === 'biweekly') {
+    const days = [...$('#weekdayPicker').querySelectorAll('button.active')].map(b => b.dataset.day);
+    if (!days.length) return { repeat: null, error: 'Please select at least one day.' };
+    repeat.byday = days;
+  }
+  if (repeatType === 'custom') {
+    repeat.intervalDays = parseInt($('#fIntervalDays').value, 10) || 1;
+  }
+  const until = $('#fUntil').value;
+  if (until) repeat.until = until;
+  return { repeat };
+}
+
 async function onSaveEvent() {
   const title = $('#fTitle').value.trim();
   const date = $('#fDate').value;
@@ -884,25 +979,12 @@ async function onSaveEvent() {
     return;
   }
 
-  if (isPersonal) {
-    saveNewPersonal({ title, date, time: time || null, category, author });
-    return;
-  }
+  const { repeat, error } = readRepeatFromForm();
+  if (error) { setHint(error, 'error'); return; }
 
-  const repeatType = $('#fRepeat').value;
-  let repeat = null;
-  if (repeatType !== 'none') {
-    repeat = { freq: repeatType };
-    if (repeatType === 'weekly' || repeatType === 'biweekly') {
-      const days = [...$('#weekdayPicker').querySelectorAll('button.active')].map(b => b.dataset.day);
-      if (!days.length) { setHint('Please select at least one day.', 'error'); return; }
-      repeat.byday = days;
-    }
-    if (repeatType === 'custom') {
-      repeat.intervalDays = parseInt($('#fIntervalDays').value, 10) || 1;
-    }
-    const until = $('#fUntil').value;
-    if (until) repeat.until = until;
+  if (isPersonal) {
+    saveNewPersonal({ title, date, time: time || null, category, author, repeat });
+    return;
   }
 
   // 낙관적 업데이트 — 서버 응답 기다리지 않고 화면에 바로 반영, 저장은 백그라운드에서 진행
@@ -976,13 +1058,20 @@ async function saveEdit(id, fields) {
 }
 
 // ===== Personal 일정 저장/수정 (로컬 전용 — 네트워크 없이 바로 반영, 반복 미지원) =====
-function saveNewPersonal({ title, date, time, category, author }) {
-  localData.personalEvents.push({
+function saveNewPersonal({ title, date, time, category, author, repeat }) {
+  const ev = {
     id: 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2),
-    title, date, time, allDay: !time,
-    category, author, colorId: state.categories[category] || '8',
-    isRecurring: false
-  });
+    title, time, allDay: !time,
+    category, author, colorId: state.categories[category] || '8'
+  };
+  if (repeat) {
+    ev.repeat = repeat;
+    ev.startDate = date;
+    ev.exceptions = [];
+  } else {
+    ev.date = date;
+  }
+  localData.personalEvents.push(ev);
   persistLocalData();
   state.selectedDate = date;
   closeAddModal();
@@ -991,12 +1080,15 @@ function saveNewPersonal({ title, date, time, category, author }) {
   trackRecentTask(title);
 }
 
+// 반복 일정 수정은 시리즈 전체(id 그대로, ev.repeat 있는 원본)에 적용됨 —
+// 특정 발생일 하나만 따로 저장하는 기능은 없음(단순화). 날짜를 바꾸면 반복 시작일이 바뀜.
 function saveEditPersonal(id, fields) {
   const idx = localData.personalEvents.findIndex(e => e.id === id);
   if (idx >= 0) {
+    const ev = localData.personalEvents[idx];
+    const dateField = ev.repeat ? { startDate: fields.date } : { date: fields.date };
     localData.personalEvents[idx] = {
-      ...localData.personalEvents[idx],
-      title: fields.title, date: fields.date,
+      ...ev, title: fields.title, ...dateField,
       time: fields.time, allDay: !fields.time,
       category: fields.category, author: fields.author,
       colorId: state.categories[fields.category] || '8'
@@ -1166,15 +1258,7 @@ function bindEvents() {
     if ($('#scopeToggle').classList.contains('locked')) return;
     const btn = e.target.closest('.scope-btn');
     if (!btn) return;
-    const isPersonal = btn.dataset.scope === 'personal';
     setScopeToggle(btn.dataset.scope, false);
-    if (isPersonal) {
-      $('#fRepeat').value = 'none';
-      $('#biweeklyRow').hidden = true;
-      $('#customRow').hidden = true;
-      $('#untilRow').hidden = true;
-    }
-    $('#repeatRow').hidden = isPersonal; // Personal은 반복 미지원(단순화)
     resizeToContent();
   });
 
