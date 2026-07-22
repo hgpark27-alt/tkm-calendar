@@ -165,27 +165,31 @@ const WIDGET_MAX_H = 700;
 
 // 항상 콘텐츠 크기만큼만 창을 차지하게 함(Electron 없으면 조용히 무시됨) — 모달/팝업은
 // #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 못 잡아서 열고닫을 때 직접 호출
+// 진짜 원인 찾음: body{zoom:0.8}가 걸려있으면 getBoundingClientRect()/offsetWidth 등은
+// 줌이 "적용되기 전"(원래 설계 크기, 1.25배 큰) 좌표계 값을 돌려줌 — 반면 window.innerWidth/
+// innerHeight는 실제 줌 적용된(진짜 화면) 좌표계임. 이 둘을 그냥 섞어 써서 창이 항상 실제
+// 필요한 크기의 1.25배로 큼직하게 잡혔던 게 여백의 진짜 원인 (실측: #app.offsetWidth=304인데
+// window.innerWidth=243, 304/243=1.25=1/0.8 — 정확히 일치).
 function resizeToContent() {
-  let target;
+  let target, extraPad;
   if ($('#modalBackdrop')?.classList.contains('open')) {
-    target = $('#modalBackdrop .modal').getBoundingClientRect().height + 24;
+    target = $('#modalBackdrop .modal').getBoundingClientRect().height;
+    extraPad = 24;
   } else if ($('#recurringBackdrop')?.classList.contains('open')) {
-    target = $('#recurringBackdrop .modal').getBoundingClientRect().height + 24;
+    target = $('#recurringBackdrop .modal').getBoundingClientRect().height;
+    extraPad = 24;
   } else {
     // getBoundingClientRect는 소수점까지 정확 — scrollHeight(정수 반올림)로는
     // 6주짜리 달(그리드 6행)에서 반올림 오차가 누적돼 마지막 행이 잘리는 문제가 있었음
     target = document.getElementById('app').getBoundingClientRect().height;
+    extraPad = 6;
   }
-  const requestedH = Math.min(Math.ceil(Math.max(target, 120)) + 6, WIDGET_MAX_H);
-  // 진단용 로그 — 여백 버그가 다시 나타나면 이 로그로 실제 원인(요청값 vs 실제 반영값,
-  // window.api 존재 여부)을 바로 확인하려고 남겨둠. main 프로세스 콘솔로도 전달됨(main/index.js 참고)
-  console.log(`[resize] target=${target.toFixed(1)} requestedH=${requestedH} hasApi=${!!window.api?.resize} innerH=${window.innerHeight}`);
+  // CSS의 zoom 값을 하드코딩하지 않고 실제 계산된 값을 읽어서 곱함 — 나중에 zoom 값이
+  // 바뀌어도 여기 코드를 따로 안 고쳐도 항상 맞게 동작함
+  const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
+  const zoomedTarget = target * bodyZoom;
+  const requestedH = Math.min(Math.ceil(Math.max(zoomedTarget, 120)) + extraPad, WIDGET_MAX_H);
   window.api?.resize?.(WIDGET_W, requestedH);
-  setTimeout(() => {
-    if (window.innerHeight !== requestedH) {
-      console.log(`[resize] MISMATCH: requested=${requestedH} but actual innerHeight=${window.innerHeight}`);
-    }
-  }, 100);
 }
 
 const DOT_COLOR = { // colorId → CSS 변수 (style.css의 --c1~--c11과 매칭)

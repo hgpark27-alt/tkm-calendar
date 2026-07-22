@@ -144,14 +144,6 @@ ipcMain.on('win-resize', (e, w, h) => {
       const clampedX = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - rw))
       const clampedY = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - rh))
       win.setBounds({ x: clampedX, y: clampedY, width: rw, height: rh }, false)
-      // Windows에서 frameless 창을 프로그램적으로 "줄일" 때 DWM이 이전(더 컸던) 프레임의
-      // 아래쪽 영역을 다시 안 그리고 남겨두는 경우가 있음(잔상) — 맥스→심플→접힘처럼 갈수록
-      // 줄어드는 폭에 비례해서 여백이 남는 게 바로 이 증상. 1px 늘렸다 바로 되돌리면
-      // Windows가 진짜 크기 변경으로 인식해서 강제로 다시 그림(알려진 우회법)
-      if (process.platform === 'win32') {
-        win.setBounds({ x: clampedX, y: clampedY, width: rw, height: rh + 1 }, false)
-        win.setBounds({ x: clampedX, y: clampedY, width: rw, height: rh }, false)
-      }
     }
   } catch (err) { console.error('[win-resize]', err) }
   e.returnValue = null
