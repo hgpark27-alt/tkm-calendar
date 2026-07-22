@@ -176,7 +176,16 @@ function resizeToContent() {
     // 6주짜리 달(그리드 6행)에서 반올림 오차가 누적돼 마지막 행이 잘리는 문제가 있었음
     target = document.getElementById('app').getBoundingClientRect().height;
   }
-  window.api?.resize?.(WIDGET_W, Math.min(Math.ceil(Math.max(target, 120)) + 6, WIDGET_MAX_H));
+  const requestedH = Math.min(Math.ceil(Math.max(target, 120)) + 6, WIDGET_MAX_H);
+  // 진단용 로그 — 여백 버그가 다시 나타나면 이 로그로 실제 원인(요청값 vs 실제 반영값,
+  // window.api 존재 여부)을 바로 확인하려고 남겨둠. main 프로세스 콘솔로도 전달됨(main/index.js 참고)
+  console.log(`[resize] target=${target.toFixed(1)} requestedH=${requestedH} hasApi=${!!window.api?.resize} innerH=${window.innerHeight}`);
+  window.api?.resize?.(WIDGET_W, requestedH);
+  setTimeout(() => {
+    if (window.innerHeight !== requestedH) {
+      console.log(`[resize] MISMATCH: requested=${requestedH} but actual innerHeight=${window.innerHeight}`);
+    }
+  }, 100);
 }
 
 const DOT_COLOR = { // colorId → CSS 변수 (style.css의 --c1~--c11과 매칭)
@@ -355,14 +364,6 @@ async function init() {
     if (resizeRaf) return;
     resizeRaf = requestAnimationFrame(() => { resizeRaf = null; resizeToContent(); });
   }).observe(document.getElementById('app'));
-
-  // 위 감시로도 가끔 창이 실제 내용보다 크게 남는 경우가 있어서(정확한 재현 조건을
-  // 못 찾음) — 모달이 안 열려있을 때 주기적으로 한 번씩 더 맞춰서 결국엔 항상 맞게 함
-  setInterval(() => {
-    if ($('#modalBackdrop').classList.contains('open')) return;
-    if ($('#recurringBackdrop').classList.contains('open')) return;
-    resizeToContent();
-  }, 700);
 
   // 카테고리는 백그라운드 로드 — "+" 모달 열기 전까지는 필요 없음
   apiGet({ action: 'categories' }).then(catRes => {
@@ -996,9 +997,10 @@ async function onSaveEvent() {
   };
   state.events.push(optimistic);
   state.selectedDate = date;
-  closeAddModal();
+  closeAddModal(); // 모달 닫힘 처리(그 시점의 #app 크기로 1차 리사이즈) 직후에 아래에서 내용이 또 바뀌므로
   renderGrid();
   renderDayPanel();
+  resettleSize(); // 방금 추가된 일정이 반영된 "진짜" 최종 크기로 다시 맞춤 — ResizeObserver에만 기대지 않음
 
   let res;
   try {
@@ -1038,6 +1040,7 @@ async function saveEdit(id, fields) {
   closeAddModal();
   renderGrid();
   renderDayPanel();
+  resettleSize();
 
   let res;
   try {
@@ -1077,6 +1080,7 @@ function saveNewPersonal({ title, date, time, category, author, repeat }) {
   closeAddModal();
   renderGrid();
   renderDayPanel();
+  resettleSize();
   trackRecentTask(title);
 }
 
@@ -1098,6 +1102,7 @@ function saveEditPersonal(id, fields) {
   closeAddModal();
   renderGrid();
   renderDayPanel();
+  resettleSize();
 }
 
 // ===== Recurring event management =====

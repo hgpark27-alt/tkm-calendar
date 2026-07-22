@@ -79,6 +79,12 @@ function createWindow() {
 
   win.once('ready-to-show', () => win.show())
 
+  // 렌더러 console.log를 이 터미널로도 그대로 보이게 함 — 여백 버그 진단용 로그를
+  // 개발자도구 안 열고 바로 여기서 확인하려고(문제 재현되면 [resize] 로그부터 확인)
+  win.webContents.on('console-message', (_e, _level, message) => {
+    if (message.startsWith('[resize]')) console.log(message)
+  })
+
   win.on('close', () => {
     const b = win.getBounds()
     const p = loadPrefs()
