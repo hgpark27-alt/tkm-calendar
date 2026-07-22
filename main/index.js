@@ -72,6 +72,10 @@ function createWindow() {
     // 높이는 여전히 내용에 맞춰 자동 조절(resizeToContent가 매번 다시 맞춤), 폭만 사용자가
     // 바꾼 값을 기억해서 유지함(main/index.js의 close 핸들러 + app.js의 window.innerWidth 사용 참고)
     resizable: true,
+    // 타이틀바(드래그 영역)를 더블클릭하면 Windows가 최대화/폭 늘리기를 시도하는데,
+    // maximizable:false로 아예 그 제스처 자체를 못 하게 막음 — resizable은 그대로라 우하단
+    // 핸들로 수동 리사이즈하는 건 영향 없음
+    maximizable: false,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -98,10 +102,6 @@ function createWindow() {
     const p = loadPrefs()
     savePrefs({ ...p, pos: { x: b.x, y: b.y }, width: b.width })
   })
-
-  // 타이틀바(app-region: drag)를 더블클릭하면 Windows가 자동으로 전체화면 처리해버림 —
-  // 위젯이라 원하는 동작이 아니라서, 최대화되면 즉시 되돌림
-  win.on('maximize', () => win.unmaximize())
 
   // Tack처럼 창이 포커스를 잃으면(다른 데 클릭) 열려있던 모달/팝업을 닫음
   win.on('blur', () => win.webContents.send('win-blur'))
@@ -173,6 +173,12 @@ autoUpdater.on('error', (err) => sendUpdateStatus('error', err?.message))
 autoUpdater.on('update-downloaded', (info) => sendUpdateStatus('downloaded', info.version))
 
 ipcMain.handle('check-for-updates', () => {
+  // 패키징 안 된 개발 모드(npx electron .)에서는 electron-updater가 조용히 아무것도 안 함 —
+  // 그러면 버튼이 그냥 안 되는 것처럼 보이니 이 경우만 바로 안내 메시지를 보내줌
+  if (!app.isPackaged) {
+    sendUpdateStatus('error', '개발 모드에서는 업데이트 확인이 안 됨(설치된 앱에서만 동작)')
+    return true
+  }
   autoUpdater.checkForUpdates()
   return true
 })

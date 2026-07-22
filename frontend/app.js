@@ -1333,7 +1333,7 @@ function bindEvents() {
       downloading: `Downloading update... ${data.extra}%`,
       'not-available': 'You have the latest version.',
       downloaded: `Update ready (v${data.extra}) — restart to install.`,
-      error: 'Update check failed.'
+      error: data.extra ? `Update check failed: ${data.extra}` : 'Update check failed.'
     };
     const el = $('#updateStatus');
     if (el) el.textContent = messages[data.status] || '';
