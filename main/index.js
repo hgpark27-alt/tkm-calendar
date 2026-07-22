@@ -3,6 +3,11 @@ const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const fs = require('fs')
 
+// 이 위젯은 텍스트/CSS 위주라 GPU 가속이 딱히 필요 없음 — 켜져있으면 특히 그래픽카드가
+// 약하거나 가상화된 환경(회사 노트북, 원격 데스크톱 등)에서 GPU 프로세스 초기화 때문에
+// 창이 뜨는 데 시간이 걸릴 수 있어서, app.whenReady() 전에 꺼서 그 과정 자체를 건너뜀
+app.disableHardwareAcceleration()
+
 app.setPath('userData', path.join(app.getPath('appData'), 'TKM Calendar'))
 
 const W = 243        // 기존 304의 80% — 렌더러의 CSS zoom:0.8과 짝을 맞춤(app.js의 WIDGET_W와 일치해야 함)
