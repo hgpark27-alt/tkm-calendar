@@ -11,6 +11,7 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({
     width: 256, height: 256, show: false,
     frame: false, useContentSize: true, // 타이틀바/테두리 때문에 캡처가 정사각형이 아니게 잘렸었음
+    transparent: true, backgroundColor: '#00000000', // 배경 투명 — 안 하면 capturePage가 불투명 흰색으로 찍음
     webPreferences: { offscreen: false }
   })
   const svgPath = path.join(__dirname, 'icon-src.svg')
