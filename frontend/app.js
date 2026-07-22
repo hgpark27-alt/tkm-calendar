@@ -358,9 +358,15 @@ async function init() {
   document.addEventListener('click', (e) => {
     const app = document.getElementById('app');
     if (!app.classList.contains('unfocused')) return;
-    if (e.target.closest('.title-bar')) return; // 손잡이 클릭/드래그는 이동만, 펼치지 않음
+    if (e.target.closest('.title-bar')) return; // 손잡이 한 번 클릭/드래그는 이동만, 펼치지 않음
     if (e.target.closest('.todo-check') || e.target.closest('.todo-del')) return; // 체크박스/삭제만 접힌 채로 처리, My Notes 나머지 부분은 눌러도 펼쳐짐
     restoreOverlaysOnFocus();
+  });
+  // 손잡이(상단부)는 더블클릭하면 펼쳐짐 — maximizable:false로 막아놔서 이제 Windows가
+  // 더블클릭을 최대화 제스처로 가로채지 않으니 일반 dblclick이 정상적으로 들어옴
+  $('.title-bar').addEventListener('dblclick', () => {
+    const app = document.getElementById('app');
+    if (app.classList.contains('unfocused')) restoreOverlaysOnFocus();
   });
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
