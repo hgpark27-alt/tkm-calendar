@@ -309,6 +309,11 @@ body {
   border-radius: 2px;
   background: var(--accent);
 }
+/* 손잡이(핸들)만 드래그되게 하니까 판정 영역이 너무 좁았음 — 접힘 상태에서 보이는
+   상단 달력 헤더(월 표시 줄) 전체를 드래그 영역으로 넓힘 */
+#app.unfocused .topbar {
+  -webkit-app-region: drag;
+}
 
 .day-panel-toggle {
   flex-shrink: 0;
@@ -493,9 +498,6 @@ body {
 /* accent를 글자색으로 안 쓰는 이유는 위 popover-item.active와 동일(테마별 대비 문제) */
 .scope-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
 .scope-toggle.locked .scope-btn { cursor: default; opacity: 0.6; }
-
-.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip {
 
 .cat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {

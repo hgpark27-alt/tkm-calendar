@@ -64,6 +64,7 @@ function createWindow() {
     x: prefs.pos?.x,
     y: prefs.pos?.y,
     frame: false,
+    icon: path.join(__dirname, '..', 'build', 'icon.ico'), // 기본 Electron 아이콘 대신 TKM 아이콘 — 개발모드 실행 시에도 적용됨
     alwaysOnTop: pinned,
     resizable: false, // 사용자가 직접 드래그로 리사이즈 못 함 — 내용 크기에 맞춰 자동으로만 조절됨
     show: false,
