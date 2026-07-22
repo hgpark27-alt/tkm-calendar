@@ -654,7 +654,7 @@ function renderDayPanel() {
 
 // ===== 삭제 =====
 async function onDelete(ev) {
-  if (!confirm(`"${ev.title}" 일정을 삭제할까요?`)) return;
+  if (!safeConfirm(`"${ev.title}" 일정을 삭제할까요?`)) return;
 
   if (ev.isPersonal) {
     localData.personalEvents = localData.personalEvents.filter(e => e.id !== ev.id);
@@ -666,12 +666,12 @@ async function onDelete(ev) {
 
   const myName = localStorage.getItem('tkm_username') || '';
   if (ev.author && myName && ev.author.trim() !== myName.trim()) {
-    if (!confirm(`이 일정은 "${ev.author}"님이 등록했습니다. 그래도 삭제하시겠어요?`)) return;
+    if (!safeConfirm(`이 일정은 "${ev.author}"님이 등록했습니다. 그래도 삭제하시겠어요?`)) return;
   }
 
   let deleteSeries = false;
   if (ev.isRecurring) {
-    deleteSeries = confirm('반복 일정입니다.\n확인 = 반복 전체 삭제\n취소 = 이 날짜만 삭제');
+    deleteSeries = safeConfirm('반복 일정입니다.\n확인 = 반복 전체 삭제\n취소 = 이 날짜만 삭제');
   }
 
   // 낙관적 삭제 — 서버 응답 기다리지 않고 화면에서 바로 제거, 실패하면 되돌림
@@ -694,7 +694,7 @@ async function onDelete(ev) {
     state.events.push(...removed); // 롤백
     renderGrid();
     renderDayPanel();
-    alert('삭제 실패: ' + res.error);
+    safeAlert('삭제 실패: ' + res.error);
     return;
   }
 
@@ -809,9 +809,26 @@ function resettleSize() {
   setTimeout(resizeToContent, 200);
 }
 
+// confirm()/alert()는 Electron에서 네이티브 대화상자라 뜨는 순간 창이 blur됨 —
+// "삭제할까요?" 확인창에 답했을 뿐인데 접힘모드로 착각해서 오늘 날짜로 튕기는 문제가 있었음.
+// 대화상자를 띄우기 직전/직후에 이 플래그를 켜서, 그 사이에 들어오는 blur는 무시함.
+let suppressBlurCollapse = false;
+function safeConfirm(msg) {
+  suppressBlurCollapse = true;
+  const result = confirm(msg);
+  setTimeout(() => { suppressBlurCollapse = false; }, 150); // 지연된 blur 이벤트가 뒤늦게 도착하는 경우 대비
+  return result;
+}
+function safeAlert(msg) {
+  suppressBlurCollapse = true;
+  alert(msg);
+  setTimeout(() => { suppressBlurCollapse = false; }, 150);
+}
+
 // Tack처럼 창이 포커스를 잃으면 열려있던 모달/팝업/반복관리 창을 닫고,
 // 일정 목록은 접고(My Notes 체크리스트는 유지) 오늘 날짜·오늘 달로 돌아감
 function closeAllOverlaysOnBlur() {
+  if (suppressBlurCollapse) return; // 우리 자신의 confirm()/alert() 때문에 뜬 blur — 무시
   if ($('#modalBackdrop').classList.contains('open')) closeAddModal();
   if ($('#recurringBackdrop').classList.contains('open')) { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }
   closePopover();
@@ -905,7 +922,7 @@ async function onSaveEvent() {
     state.events = state.events.filter(e => e.id !== tempId);
     renderGrid();
     renderDayPanel();
-    alert('저장 실패: ' + res.error);
+    safeAlert('저장 실패: ' + res.error);
     return;
   }
 
@@ -943,7 +960,7 @@ async function saveEdit(id, fields) {
     if (prev && idx >= 0) state.events[idx] = prev; // 롤백
     renderGrid();
     renderDayPanel();
-    alert('수정 실패: ' + res.error);
+    safeAlert('수정 실패: ' + res.error);
     return;
   }
 
@@ -1054,7 +1071,7 @@ function renderRecurringList(series) {
     del.className = 'event-del';
     del.textContent = '×';
     del.addEventListener('click', async () => {
-      if (!confirm(`"${s.title}" 반복 일정 전체를 삭제할까요?`)) return;
+      if (!safeConfirm(`"${s.title}" 반복 일정 전체를 삭제할까요?`)) return;
 
       // 낙관적 삭제 — 목록에서 바로 제거, 실패하면 되돌림
       const remaining = series.filter(x => x.id !== s.id);
@@ -1068,7 +1085,7 @@ function renderRecurringList(series) {
       }
 
       if (!r.ok) {
-        alert('삭제 실패: ' + r.error);
+        safeAlert('삭제 실패: ' + r.error);
         renderRecurringList(series); // 롤백
         return;
       }
