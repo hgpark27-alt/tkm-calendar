@@ -24,5 +24,11 @@ contextBridge.exposeInMainWorld('api', {
     const handler = () => cb()
     ipcRenderer.on('handle-dblclick', handler)
     return () => ipcRenderer.removeListener('handle-dblclick', handler)
+  },
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  onUpdateStatus: (cb) => {
+    const handler = (_e, data) => cb(data)
+    ipcRenderer.on('update-status', handler)
+    return () => ipcRenderer.removeListener('update-status', handler)
   }
 })

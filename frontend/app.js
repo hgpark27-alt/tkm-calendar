@@ -1328,6 +1328,25 @@ function bindEvents() {
     $('#autoLaunchBtn').classList.toggle('active', !!next);
     resizeToContent();
   });
+
+  // ── 수동 업데이트 확인 ──
+  $('#checkUpdateBtn')?.addEventListener('click', () => {
+    $('#updateStatus').textContent = 'Checking for updates...';
+    resizeToContent();
+    window.api?.checkForUpdates?.();
+  });
+  window.api?.onUpdateStatus?.((data) => {
+    const messages = {
+      checking: 'Checking for updates...',
+      available: `Update found (v${data.extra}) — downloading...`,
+      'not-available': 'You have the latest version.',
+      downloaded: `Update ready (v${data.extra}) — restart to install.`,
+      error: 'Update check failed.'
+    };
+    const el = $('#updateStatus');
+    if (el) el.textContent = messages[data.status] || '';
+    resizeToContent();
+  });
   $('#closeRecurring').addEventListener('click', () => { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); });
   $('#recurringBackdrop').addEventListener('click', (e) => {
     if (e.target.id === 'recurringBackdrop') { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }

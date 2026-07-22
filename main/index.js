@@ -153,11 +153,28 @@ ipcMain.on('win-resize', (e, w, h) => {
   e.returnValue = null
 })
 
+// 자동 업데이트 상태를 렌더러(톱니 메뉴)에도 보여주기 위해 이벤트를 그대로 전달
+function sendUpdateStatus(status, extra) {
+  win?.webContents.send('update-status', { status, extra })
+}
+autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking'))
+autoUpdater.on('update-available', (info) => sendUpdateStatus('available', info.version))
+autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'))
+autoUpdater.on('error', (err) => sendUpdateStatus('error', err?.message))
+autoUpdater.on('update-downloaded', (info) => sendUpdateStatus('downloaded', info.version))
+
+ipcMain.handle('check-for-updates', () => {
+  autoUpdater.checkForUpdatesAndNotify()
+  return true
+})
+
 app.whenReady().then(() => {
   createWindow()
 
-  // 자동 업데이트 — GitHub Releases 확인 후 있으면 조용히 받아서 다음 실행 때 적용
+  // 자동 업데이트 — 실행 시점(지금)과, 이후 6시간마다 GitHub Releases 확인 후 있으면
+  // 조용히 받아서 다음 실행 때 적용. 톱니 메뉴의 "Check for Updates"로 수동으로도 가능(위 핸들러)
   autoUpdater.checkForUpdatesAndNotify()
+  setInterval(() => autoUpdater.checkForUpdatesAndNotify(), 6 * 60 * 60 * 1000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
