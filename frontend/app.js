@@ -357,6 +357,12 @@ async function init() {
     if (e.target.closest('.personal-todo')) return; // 체크/삭제는 접힌 채로 그 자리에서 처리
     restoreOverlaysOnFocus();
   });
+  // 손잡이는 한 클릭으로는 안 펼쳐지지만(위), 더블클릭하면 펼쳐지게 — 기존 트리거(손잡이 밖 클릭)는 그대로 유지
+  $('.title-bar').addEventListener('dblclick', (e) => {
+    const app = document.getElementById('app');
+    if (!app.classList.contains('unfocused')) return;
+    restoreOverlaysOnFocus();
+  });
 
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
