@@ -17,5 +17,7 @@ contextBridge.exposeInMainWorld('api', {
     const handler = () => cb()
     ipcRenderer.on('win-focus', handler)
     return () => ipcRenderer.removeListener('win-focus', handler)
-  }
+  },
+  getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
+  toggleAutoLaunch: () => ipcRenderer.invoke('toggle-auto-launch')
 })

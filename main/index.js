@@ -116,6 +116,15 @@ ipcMain.handle('toggle-pin', () => {
 ipcMain.handle('get-local-data', () => loadLocalData())
 ipcMain.handle('save-local-data', (_, data) => { saveLocalData(data); return true })
 
+// 윈도우 시작 시 자동 실행 — 개발 모드(npx electron .)에서는 electron.exe 자체를 등록해버려서
+// 의미가 없고, 실제 설치된 앱(패키징된 실행 파일)에서만 제대로 동작함
+ipcMain.handle('get-auto-launch', () => app.getLoginItemSettings().openAtLogin)
+ipcMain.handle('toggle-auto-launch', () => {
+  const next = !app.getLoginItemSettings().openAtLogin
+  app.setLoginItemSettings({ openAtLogin: next })
+  return next
+})
+
 // 렌더러가 실제 콘텐츠 높이를 재서 요청하는 리사이즈 — 화면 밖으로 안 나가게 클램프
 ipcMain.on('win-resize', (e, w, h) => {
   try {

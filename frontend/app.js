@@ -266,6 +266,10 @@ async function init() {
   await loadLocalData();
   renderPersonalTodos();
 
+  window.api?.getAutoLaunch?.().then(on => {
+    $('#autoLaunchBtn')?.classList.toggle('active', !!on);
+  });
+
   // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리하고 달력만 남김
   window.api?.onBlur?.(closeAllOverlaysOnBlur);
   // 포커스를 얻는 것 자체(win-focus)로는 안 펼침 — 손잡이(타이틀바)를 눌러서 창을 옮기기만 해도
@@ -274,6 +278,7 @@ async function init() {
     const app = document.getElementById('app');
     if (!app.classList.contains('unfocused')) return;
     if (e.target.closest('.title-bar')) return; // 손잡이 클릭/드래그는 이동만, 펼치지 않음
+    if (e.target.closest('.personal-todo')) return; // 체크/삭제는 접힌 채로 그 자리에서 처리
     restoreOverlaysOnFocus();
   });
 
@@ -1097,6 +1102,13 @@ function bindEvents() {
   $('#openRecurringMgmt').addEventListener('click', () => {
     closePopover();
     openRecurringModal();
+  });
+
+  // ── 윈도우 시작 시 자동 실행 (Electron 전용 — 웹 버전은 window.api가 없어서 자동 무시됨) ──
+  $('#autoLaunchBtn')?.addEventListener('click', async () => {
+    const next = await window.api?.toggleAutoLaunch?.();
+    $('#autoLaunchBtn').classList.toggle('active', !!next);
+    resizeToContent();
   });
   $('#closeRecurring').addEventListener('click', () => { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); });
   $('#recurringBackdrop').addEventListener('click', (e) => {
