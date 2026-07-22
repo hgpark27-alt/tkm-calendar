@@ -366,11 +366,19 @@ async function init() {
   // 더블클릭을 최대화 제스처로 가로채지 않으니 일반 dblclick이 정상적으로 들어옴.
   // 접힘모드에서는 .title-bar(손잡이)뿐 아니라 .topbar(월 표시줄, "Jul 2026")도 드래그 영역이라
   // 사용자가 거기를 더블클릭하는 경우가 많음 — 둘 다 잡아야 함
-  document.addEventListener('dblclick', (e) => {
-    const app = document.getElementById('app');
-    if (!app.classList.contains('unfocused')) return;
+  // -webkit-app-region:drag 영역에서는 Windows가 click/dblclick 자체를 아예 안 보내주는 경우가
+  // 많아서(더블클릭도 안 먹힘 확인됨) mousedown 타이밍을 직접 재서 더블클릭을 판정함.
+  // maximizable:false라 이제 네이티브 최대화 제스처가 안 걸리니 이 방식이 부작용 없이 동작함
+  let lastDragMouseDown = 0;
+  document.addEventListener('mousedown', (e) => {
     if (!e.target.closest('.title-bar') && !e.target.closest('.topbar')) return;
-    restoreOverlaysOnFocus();
+    if (e.target.closest('button')) return; // 아이콘/이전달/다음달 버튼 등은 제외
+    const now = Date.now();
+    const isDoubleClick = now - lastDragMouseDown < 400;
+    lastDragMouseDown = now;
+    if (!isDoubleClick) return;
+    const app = document.getElementById('app');
+    if (app.classList.contains('unfocused')) restoreOverlaysOnFocus();
   });
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
   let resizeRaf = null;
