@@ -314,10 +314,56 @@ function renderMonthTitle() {
   $('#monthTitle').textContent = `${MONTH_EN[state.month - 1]} ${state.year}`;
 }
 
+// 심플모드 날짜 위에 마우스 올리면 바로(지연 없이) 뜨는 일정 미리보기 — 드롭다운처럼
+function showHoverTip(cellEl, events) {
+  const tip = $('#hoverTip');
+  tip.innerHTML = '';
+  events.slice(0, 6).forEach(ev => {
+    const row = document.createElement('div');
+    row.className = 'hover-tip-row';
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dotStyle(dot, ev);
+    row.appendChild(dot);
+    const title = document.createElement('span');
+    title.className = 'hover-tip-title';
+    title.textContent = ev.title;
+    row.appendChild(title);
+    if (!ev.allDay && ev.time) {
+      const time = document.createElement('span');
+      time.className = 'hover-tip-time';
+      time.textContent = ev.time;
+      row.appendChild(time);
+    }
+    tip.appendChild(row);
+  });
+  if (events.length > 6) {
+    const more = document.createElement('div');
+    more.className = 'hover-tip-more';
+    more.textContent = `+${events.length - 6} more`;
+    tip.appendChild(more);
+  }
+  tip.classList.add('open');
+
+  // 좁은 위젯 폭 안에서만 보이게 위치 clamp — 셀 아래쪽 우선, 공간 없으면 위쪽
+  const cellRect = cellEl.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  let left = cellRect.left + cellRect.width / 2 - tipRect.width / 2;
+  left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
+  let top = cellRect.bottom + 4;
+  if (top + tipRect.height > window.innerHeight - 4) top = cellRect.top - tipRect.height - 4;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+function hideHoverTip() {
+  $('#hoverTip').classList.remove('open');
+}
+
 // ===== 렌더링: 월간 그리드 =====
 function renderGrid() {
   const grid = $('#grid');
   grid.innerHTML = '';
+  hideHoverTip(); // 그리드가 다시 그려지면(달 이동 등) 떠 있던 미리보기는 정리
   grid.className = 'grid mode-' + state.viewMode;
 
   const firstDow = new Date(state.year, state.month - 1, 1).getDay(); // 0=일
@@ -415,6 +461,13 @@ function renderGrid() {
         }
         div.appendChild(dotsWrap);
       }
+    }
+
+    // 심플모드는 제목이 안 보이니까(점만 표시) 마우스 올리면 작은 미리보기로 보여줌 —
+    // 맥스모드는 이미 칸 안에 제목이 나와 있어서 필요 없음
+    if (state.viewMode === 'simple' && dayEvents.length) {
+      div.addEventListener('mouseenter', () => showHoverTip(div, dayEvents));
+      div.addEventListener('mouseleave', hideHoverTip);
     }
 
     div.addEventListener('click', () => {
@@ -656,6 +709,7 @@ function closeAllOverlaysOnBlur() {
   if ($('#modalBackdrop').classList.contains('open')) closeAddModal();
   if ($('#recurringBackdrop').classList.contains('open')) { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }
   closePopover();
+  hideHoverTip();
 
   document.getElementById('app').classList.add('unfocused');
   state.selectedDate = todayKey();

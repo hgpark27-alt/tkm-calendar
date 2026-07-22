@@ -224,6 +224,32 @@ body {
 .dot-none { background: var(--text); } /* 테마 글자색을 그대로 써서 라이트=검정, 다크=흰색으로 자동 대응 */
 .dot-more { font-size: 8px; color: var(--text-soft); line-height: 1; }
 
+/* ── 심플모드: 일정 있는 날짜에 마우스 올리면 뜨는 작은 미리보기 ─────────────────────────── */
+.hover-tip {
+  position: fixed;
+  z-index: 30;
+  max-width: 190px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  padding: 7px 9px;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none; /* 마우스를 가로채지 않게 — 순수 미리보기용 */
+}
+.hover-tip.open { display: flex; }
+.hover-tip-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hover-tip-row .dot { width: 6px; height: 6px; flex-shrink: 0; }
+.hover-tip-title {
+  flex: 1; min-width: 0;
+  font-size: 11.5px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hover-tip-time { font-size: 10px; color: var(--accent); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.hover-tip-more { font-size: 10px; color: var(--text-soft); }
+
 /* ── 최대 모드: 점 대신 셀 안에 업무 제목까지 표시 ─────────────────────────── */
 .grid.mode-max .cell {
   aspect-ratio: unset;
