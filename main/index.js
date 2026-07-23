@@ -146,6 +146,21 @@ ipcMain.handle('toggle-auto-launch', () => {
   return next
 })
 
+// 개인 ICS 캘린더 구독 — 렌더러(브라우저 환경)에서 직접 fetch하면 CORS로 막히는 외부 주소가
+// 많아서, CORS 제약이 없는 main 프로세스(Node)에서 대신 받아다 줌. 사용자별로 각자 다른 주소를
+// 넣을 수 있고, 이 컴퓨터 안에서만 쓰임(팀 캘린더/백엔드와는 무관)
+ipcMain.handle('fetch-ics', async (_e, url) => {
+  try {
+    if (!/^https?:\/\//i.test(url)) throw new Error('http(s) 주소만 지원함')
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const text = await res.text()
+    return { ok: true, text }
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) }
+  }
+})
+
 // 렌더러가 실제 콘텐츠 높이를 재서 요청하는 리사이즈 — 화면 밖으로 안 나가게 클램프
 ipcMain.on('win-resize', (e, w, h) => {
   try {

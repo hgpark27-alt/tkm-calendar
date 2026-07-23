@@ -26,5 +26,6 @@ contextBridge.exposeInMainWorld('api', {
     const handler = (_e, data) => cb(data)
     ipcRenderer.on('update-status', handler)
     return () => ipcRenderer.removeListener('update-status', handler)
-  }
+  },
+  fetchIcs: (url) => ipcRenderer.invoke('fetch-ics', url)
 })

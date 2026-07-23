@@ -1,6 +1,6 @@
 // ===== 로컬 전용 데이터 (구글 캘린더로 절대 안 올라감 — 이 컴퓨터에만 저장) =====
 // Electron이면 main 프로세스가 파일로 원자적 저장(Tack 방식), 브라우저 테스트 중이면 localStorage로 대체
-let localData = { recentTasks: [], personalTodos: [], personalEvents: [] };
+let localData = { recentTasks: [], personalTodos: [], personalEvents: [], icsUrl: '' };
 
 async function loadLocalData() {
   if (window.api?.getLocalData) {
@@ -11,6 +11,79 @@ async function loadLocalData() {
   localData.recentTasks ??= [];
   localData.personalTodos ??= [];
   localData.personalEvents ??= []; // "Personal" 일정 — 구글 캘린더로 절대 안 올라가고 이 컴퓨터에만 저장
+  localData.icsUrl ??= '';
+}
+
+// ===== 개인 ICS 캘린더 구독 (설정에서 각자 등록 — 이 컴퓨터에만 저장, 팀과 무관) =====
+let icsEvents = {}; // 'YYYY-MM-DD' -> [{title, time, allDay}]
+
+function icsEventsForMonth(y, m) {
+  const prefix = `${y}-${pad2(m)}`;
+  const results = [];
+  Object.keys(icsEvents).forEach(date => {
+    if (!date.startsWith(prefix)) return;
+    icsEvents[date].forEach(ev => results.push({ ...ev, date, category: '', isPersonal: true, isIcs: true }));
+  });
+  return results;
+}
+
+async function syncPersonalIcs() {
+  const url = (localData.icsUrl || '').trim();
+  if (!url) { icsEvents = {}; renderGrid(); renderDayPanel(); return { ok: false, error: '주소 없음' }; }
+  if (!window.api?.fetchIcs) return { ok: false, error: 'Electron 환경에서만 지원' };
+  const res = await window.api.fetchIcs(url);
+  if (!res.ok) return { ok: false, error: res.error };
+  icsEvents = parseIcsToEventsByDate(res.text);
+  renderGrid();
+  renderDayPanel();
+  let count = 0;
+  Object.values(icsEvents).forEach(arr => { count += arr.length; });
+  return { ok: true, count };
+}
+
+// 일반적인 외부 ICS(구글/아웃룩/아이클라우드 등)를 최대한 관대하게 파싱.
+// RRULE 반복 규칙 자체의 확장은 지원하지 않음 — 대부분의 구독용 ICS는 가까운 기간의
+// 반복 일정을 이미 개별 발생건으로 펼쳐서 내려주기 때문에 실사용에는 크게 문제 없음(알려진 한계).
+function parseIcsToEventsByDate(icsText) {
+  const rawLines = icsText.split(/\r\n|\n|\r/);
+  const lines = [];
+  for (const line of rawLines) {
+    if ((line.startsWith(' ') || line.startsWith('\t')) && lines.length) {
+      lines[lines.length - 1] += line.slice(1); // 줄 접힘(folding) 풀기
+    } else {
+      lines.push(line);
+    }
+  }
+
+  const byDate = {};
+  let cur = null;
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (line === 'END:VEVENT') {
+      if (cur && cur.date) {
+        (byDate[cur.date] ??= []).push({ title: cur.title || '(제목 없음)', time: cur.time || null, allDay: !cur.time });
+      }
+      cur = null;
+      continue;
+    }
+    if (!cur) continue;
+    if (line.startsWith('DTSTART')) {
+      const idx = line.indexOf(':');
+      if (idx < 0) continue;
+      const head = line.slice(0, idx), value = line.slice(idx + 1).trim();
+      if (head.includes('VALUE=DATE') && !head.includes('DATE-TIME')) {
+        cur.date = value.slice(0, 4) + '-' + value.slice(4, 6) + '-' + value.slice(6, 8);
+      } else {
+        const digits = value.replace('Z', '');
+        cur.date = digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6, 8);
+        if (digits.length >= 13) cur.time = digits.slice(9, 11) + ':' + digits.slice(11, 13);
+      }
+    } else if (line.startsWith('SUMMARY')) {
+      const idx = line.indexOf(':');
+      cur.title = idx >= 0 ? line.slice(idx + 1).trim() : '';
+    }
+  }
+  return byDate;
 }
 
 // 개인 일정 중 특정 달에 속하는 것만 골라서 팀 일정과 같은 모양으로 반환(그리드/일정패널에 같이 섞어 씀).
@@ -108,35 +181,98 @@ function renderRecentChips() {
   resizeToContent();
 }
 
+// My Notes는 딱 1단계까지만 하위 항목을 허용함(트리 아님, 부모-자식 한 겹만) — 단순화.
+// 데이터 모양: { id, text, done, children?: [{id, text, done}] }
 function renderPersonalTodos() {
   const list = $('#todoList');
   list.innerHTML = '';
   localData.personalTodos.forEach(todo => {
-    const li = document.createElement('li');
-    li.className = 'todo-item';
-
-    const check = document.createElement('button');
-    check.type = 'button';
-    check.className = 'todo-check' + (todo.done ? ' done' : '');
-    check.textContent = todo.done ? '✓' : '';
-    check.addEventListener('click', () => toggleTodo(todo.id));
-    li.appendChild(check);
-
-    const text = document.createElement('span');
-    text.className = 'todo-text' + (todo.done ? ' done' : '');
-    text.textContent = todo.text;
-    li.appendChild(text);
-
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'todo-del';
-    del.textContent = '×';
-    del.addEventListener('click', () => deleteTodo(todo.id));
-    li.appendChild(del);
-
-    list.appendChild(li);
+    list.appendChild(buildTodoRow(todo, null));
+    (todo.children || []).forEach(child => {
+      list.appendChild(buildTodoRow(child, todo.id));
+    });
   });
   resizeToContent();
+}
+
+function findTodoAndParent(id) {
+  for (const todo of localData.personalTodos) {
+    if (todo.id === id) return { todo, parent: null };
+    const child = (todo.children || []).find(c => c.id === id);
+    if (child) return { todo: child, parent: todo };
+  }
+  return { todo: null, parent: null };
+}
+
+function buildTodoRow(todo, parentId) {
+  const isChild = !!parentId;
+  const li = document.createElement('li');
+  li.className = 'todo-item' + (isChild ? ' todo-child' : '');
+  li.dataset.id = todo.id;
+
+  const check = document.createElement('button');
+  check.type = 'button';
+  check.className = 'todo-check' + (todo.done ? ' done' : '');
+  check.textContent = todo.done ? '✓' : '';
+  check.addEventListener('click', () => toggleTodo(todo.id));
+  li.appendChild(check);
+
+  const text = document.createElement('span');
+  text.className = 'todo-text' + (todo.done ? ' done' : '');
+  text.textContent = todo.text;
+  text.title = '클릭해서 수정';
+  text.addEventListener('click', () => startEditTodo(todo.id));
+  li.appendChild(text);
+
+  if (!isChild) {
+    const addChild = document.createElement('button');
+    addChild.type = 'button';
+    addChild.className = 'todo-add-child';
+    addChild.title = '하위 항목 추가';
+    addChild.textContent = '+';
+    addChild.addEventListener('click', () => addChildTodo(todo.id));
+    li.appendChild(addChild);
+  }
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'todo-del';
+  del.textContent = '×';
+  del.addEventListener('click', () => deleteTodo(todo.id));
+  li.appendChild(del);
+
+  return li;
+}
+
+// 텍스트를 눌렀을 때 그 자리에서 바로 고칠 수 있게 입력창으로 바꿔치기
+function startEditTodo(id) {
+  const row = $(`#todoList li[data-id="${id}"]`);
+  const { todo } = findTodoAndParent(id);
+  if (!row || !todo) return;
+  const textEl = row.querySelector('.todo-text');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'todo-edit-input';
+  input.value = todo.text;
+  row.replaceChild(input, textEl);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (!v) { deleteTodo(id); return; } // 비워두고 저장하면 그냥 삭제 취급
+    todo.text = v;
+    persistLocalData();
+    renderPersonalTodos();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { done = true; renderPersonalTodos(); }
+  });
+  input.addEventListener('blur', commit);
 }
 
 function addPersonalTodo(text) {
@@ -146,14 +282,27 @@ function addPersonalTodo(text) {
   persistLocalData();
   renderPersonalTodos();
 }
+function addChildTodo(parentId) {
+  const parent = localData.personalTodos.find(t => t.id === parentId);
+  if (!parent) return;
+  parent.children ??= [];
+  const child = { id: 'todo-' + Date.now() + '-' + Math.random().toString(36).slice(2), text: '', done: false };
+  parent.children.push(child);
+  persistLocalData();
+  renderPersonalTodos();
+  startEditTodo(child.id); // 추가하자마자 바로 입력할 수 있게
+}
 function toggleTodo(id) {
-  const item = localData.personalTodos.find(x => x.id === id);
-  if (item) item.done = !item.done;
+  const { todo } = findTodoAndParent(id);
+  if (todo) todo.done = !todo.done;
   persistLocalData();
   renderPersonalTodos();
 }
 function deleteTodo(id) {
   localData.personalTodos = localData.personalTodos.filter(x => x.id !== id);
+  localData.personalTodos.forEach(t => {
+    if (t.children) t.children = t.children.filter(c => c.id !== id);
+  });
   persistLocalData();
   renderPersonalTodos();
 }
@@ -228,6 +377,70 @@ const weekdayOf = (dateStr) => {
   const [y, m, d] = dateStr.split('-').map(Number);
   return WEEKDAY_ABBR[new Date(y, m - 1, d).getDay()];
 };
+
+// ===== What's New (최근 5개만) =====
+// 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
+const UPDATE_LOG = [
+  { id: 'u2026-personal-ics', tag: 'new', date: '7/29', text: '톱니 메뉴에서 개인 ICS 캘린더 연동 — 나만 보이는 로컬 일정' },
+  { id: 'u2026-notes-tree', tag: 'new', date: '7/29', text: 'My Notes에 하위 항목(1단계) 추가, 텍스트 클릭해서 바로 수정' },
+  { id: 'u2026-whats-new', tag: 'new', date: '7/29', text: '이 알림 — 최근 업데이트를 여기서 확인' },
+  { id: 'u2026-resize', tag: 'improved', date: '7/22', text: '우하단 핸들로 창 폭 직접 조절 가능' },
+  { id: 'u2026-holidays', tag: 'new', date: '7/22', text: '대한민국 공휴일 자동 표시' },
+];
+// 빨간 점(배지)과 목록에서 지우는 건 서로 다른 상태임 —
+// 배지는 팝업을 한 번 열어서 "확인"만 하면 사라짐(읽음 처리), 목록의 개별 항목은 ×로
+// 하나씩 직접 지워야 없어짐(정리는 각자 원할 때만, 배지랑은 무관)
+function getSeenUpdateIds() {
+  try { return JSON.parse(localStorage.getItem('tkm_seen_updates') || '[]'); } catch { return []; }
+}
+function markAllUpdatesSeen() {
+  localStorage.setItem('tkm_seen_updates', JSON.stringify(UPDATE_LOG.map(u => u.id)));
+  renderUpdatesBadge();
+}
+function getDismissedUpdateIds() {
+  try { return JSON.parse(localStorage.getItem('tkm_dismissed_updates') || '[]'); } catch { return []; }
+}
+function dismissUpdate(id) {
+  const dismissed = new Set(getDismissedUpdateIds());
+  dismissed.add(id);
+  localStorage.setItem('tkm_dismissed_updates', JSON.stringify([...dismissed]));
+  renderUpdatesList();
+}
+function renderUpdatesBadge() {
+  const seen = getSeenUpdateIds();
+  const hasUnseen = UPDATE_LOG.some(u => !seen.includes(u.id));
+  $('#updatesBadge').hidden = !hasUnseen;
+}
+function renderUpdatesList() {
+  const dismissed = getDismissedUpdateIds();
+  const remaining = UPDATE_LOG.filter(u => !dismissed.includes(u.id));
+  const list = $('#updatesList');
+  list.innerHTML = '';
+  if (!remaining.length) {
+    list.innerHTML = '<li class="updates-empty">새 소식 없음</li>';
+    resizeToContent();
+    return;
+  }
+  remaining.forEach(u => {
+    const li = document.createElement('li');
+    li.className = 'update-row';
+    li.innerHTML = `<span class="tag ${u.tag}">${u.tag}</span>`;
+    const body = document.createElement('div');
+    body.className = 'body';
+    body.innerHTML = `<span class="date">${u.date}</span><span class="text"></span>`;
+    body.querySelector('.text').textContent = u.text; // XSS 방지 — 텍스트는 innerHTML 말고 textContent로
+    li.appendChild(body);
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'dismiss';
+    dismiss.textContent = '×';
+    dismiss.title = '확인함';
+    dismiss.addEventListener('click', () => dismissUpdate(u.id)); // 확인한 사람이 직접 하나씩 닫음 — 자동으로 안 없어짐
+    li.appendChild(dismiss);
+    list.appendChild(li);
+  });
+  resizeToContent();
+}
 
 // ===== 대한민국 공휴일 (프론트에서 표시용 — 구글 캘린더(우리 팀 일정) 데이터엔 전혀 영향 없음) =====
 // 구글이 공개 제공하는 "대한민국의 휴일" 캘린더(ICS)를 백엔드에서 받아와 덮어씀(init() 참고) —
@@ -346,6 +559,8 @@ async function init() {
   // 로컬 전용 데이터(최근 업무, 개인 할일) — 네트워크 필요 없이 바로 로드
   await loadLocalData();
   renderPersonalTodos();
+  renderUpdatesBadge();
+  if (localData.icsUrl) syncPersonalIcs(); // 개인 ICS 연동해뒀으면 백그라운드로 바로 한 번 동기화
 
   window.api?.getAutoLaunch?.().then(on => {
     $('#autoLaunchBtn')?.classList.toggle('active', !!on);
@@ -416,6 +631,11 @@ async function init() {
   setInterval(() => {
     if (document.visibilityState === 'visible') loadMonth();
   }, 120000); // Apps Script 일일 실행시간 할당량 여유를 위해 2분 간격
+
+  // 개인 ICS도 비슷하게 주기적으로 재동기화(연동해둔 경우만)
+  setInterval(() => {
+    if (localData.icsUrl && document.visibilityState === 'visible') syncPersonalIcs();
+  }, 600000); // 10분 간격 — 외부 서비스 부담 덜 주게 팀 캘린더보다 느슨하게
 
   await loadMonth();
 }
@@ -544,7 +764,7 @@ function renderGrid() {
   const daysInPrevMonth = new Date(state.year, state.month - 1, 0).getDate();
 
   const eventsByDate = {};
-  for (const ev of [...state.events, ...personalEventsForMonth(state.year, state.month)]) {
+  for (const ev of [...state.events, ...personalEventsForMonth(state.year, state.month), ...icsEventsForMonth(state.year, state.month)]) {
     (eventsByDate[ev.date] ??= []).push(ev);
   }
 
@@ -689,7 +909,7 @@ function renderDayPanel() {
   const dow = WEEKDAY_EN[new Date(y, m-1, d).getDay()];
   label.textContent = `${dow}, ${MONTH_EN[m - 1]} ${d}`;
 
-  const dayEvents = [...state.events, ...personalEventsForMonth(state.year, state.month)]
+  const dayEvents = [...state.events, ...personalEventsForMonth(state.year, state.month), ...icsEventsForMonth(state.year, state.month)]
     .filter(ev => ev.date === state.selectedDate);
   if (!dayEvents.length) {
     // 안내 문구 대신 그냥 비워둠 — 창 높이가 자동으로 그만큼 줄어듦
@@ -722,7 +942,7 @@ function renderDayPanel() {
       timeEl.textContent = ev.time;
       meta.appendChild(timeEl);
     }
-    const rest = [ev.isPersonal ? 'Personal' : null, ev.category, ev.author, ev.isRecurring ? '↻ 반복' : ''].filter(Boolean).join(' · ');
+    const rest = [ev.isIcs ? 'My Calendar' : (ev.isPersonal ? 'Personal' : null), ev.category, ev.author, ev.isRecurring ? '↻ 반복' : ''].filter(Boolean).join(' · ');
     if (rest) meta.appendChild(document.createTextNode((!ev.allDay && ev.time ? ' · ' : '') + rest));
     body.appendChild(meta);
 
@@ -739,13 +959,18 @@ function renderDayPanel() {
     });
     li.appendChild(addNote);
 
-    const del = document.createElement('button');
-    del.className = 'event-del';
-    del.textContent = '×';
-    del.addEventListener('click', (e) => { e.stopPropagation(); onDelete(ev); });
-    li.appendChild(del);
+    // ICS로 가져온 외부 캘린더 일정은 읽기 전용 — 우리 쪽에서 수정/삭제할 방법이 없음(원본은 그쪽 캘린더에 있음)
+    if (!ev.isIcs) {
+      const del = document.createElement('button');
+      del.className = 'event-del';
+      del.textContent = '×';
+      del.addEventListener('click', (e) => { e.stopPropagation(); onDelete(ev); });
+      li.appendChild(del);
 
-    li.addEventListener('click', () => openEditModal(ev));
+      li.addEventListener('click', () => openEditModal(ev));
+    } else {
+      li.classList.remove('clickable');
+    }
 
     list.appendChild(li);
   });
@@ -1366,6 +1591,52 @@ function bindEvents() {
     if (el) el.textContent = messages[data.status] || '';
     resizeToContent();
   });
+
+  // ── What's New (종 아이콘) — 빨간 점은 한 번 열어보면 사라짐(읽음 처리),
+  // 목록의 항목 하나하나는 ×로 직접 지워야 없어짐(배지랑은 별개, 정리용) ──
+  $('#updatesBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    renderUpdatesList();
+    $('#updatesPopover').classList.toggle('open');
+    $('#updatesBackdrop').classList.toggle('open');
+    markAllUpdatesSeen();
+    resizeToContent();
+  });
+  $('#updatesBackdrop').addEventListener('click', () => {
+    $('#updatesPopover').classList.remove('open');
+    $('#updatesBackdrop').classList.remove('open');
+    resizeToContent();
+  });
+
+  // ── 개인 ICS 캘린더 설정 ──
+  $('#openIcsSettings').addEventListener('click', () => {
+    closePopover();
+    $('#fIcsUrl').value = localData.icsUrl || '';
+    $('#icsHint').textContent = '';
+    $('#icsBackdrop').classList.add('open');
+    resizeToContent();
+  });
+  $('#closeIcs').addEventListener('click', () => { $('#icsBackdrop').classList.remove('open'); resizeToContent(); });
+  $('#icsBackdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'icsBackdrop') { $('#icsBackdrop').classList.remove('open'); resizeToContent(); }
+  });
+  $('#saveIcsUrl').addEventListener('click', async () => {
+    const url = $('#fIcsUrl').value.trim();
+    localData.icsUrl = url;
+    persistLocalData();
+    if (!url) {
+      icsEvents = {};
+      $('#icsHint').textContent = '연동 해제됨.';
+      renderGrid(); renderDayPanel();
+      return;
+    }
+    $('#icsHint').textContent = '불러오는 중...';
+    const result = await syncPersonalIcs();
+    $('#icsHint').textContent = result.ok
+      ? `동기화 완료 (${result.count}개 일정 찾음)`
+      : `실패: ${result.error}`;
+  });
+
   $('#closeRecurring').addEventListener('click', () => { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); });
   $('#recurringBackdrop').addEventListener('click', (e) => {
     if (e.target.id === 'recurringBackdrop') { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }

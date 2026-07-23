@@ -115,6 +115,35 @@ body {
 .icon-btn.spinning svg { animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.icon-btn { position: relative; } /* 배지 위치 기준점 */
+.badge-dot {
+  position: absolute; top: 3px; right: 4px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--danger);
+  border: 1.5px solid var(--bg);
+}
+
+/* What's New 팝업 — 확인한 사람이 항목마다 직접 닫아야 없어짐(자동으로 안 사라짐) */
+.popover-updates { min-width: 210px; max-width: 240px; }
+.updates-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.update-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 8px; border-radius: 8px; background: var(--bg-soft); }
+.update-row .tag {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em;
+  padding: 2px 6px; border-radius: 999px; color: #fff; margin-top: 1px;
+}
+.update-row .tag.new { background: var(--accent); }
+.update-row .tag.improved { background: #33b679; }
+.update-row .tag.fix { background: var(--danger); }
+.update-row .body { flex: 1; min-width: 0; }
+.update-row .date { font-size: 10px; color: var(--text-soft); display: block; }
+.update-row .text { font-size: 12.5px; color: var(--text); line-height: 1.35; }
+.update-row .dismiss {
+  flex-shrink: 0; background: none; border: none; color: var(--text-soft);
+  font-size: 14px; cursor: pointer; padding: 0 2px; line-height: 1;
+}
+.update-row .dismiss:hover { color: var(--danger); }
+.updates-empty { text-align: center; color: var(--text-soft); font-size: 12px; padding: 14px 0 6px; }
+
 /* ── 상단 바 ─────────────────────────── */
 .topbar {
   display: flex;
@@ -364,10 +393,30 @@ body {
   color: #fff;
 }
 .todo-check.done { background: var(--accent); border-color: var(--accent); font-size: 12px; }
-.todo-text { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-text { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
 .todo-text.done { text-decoration: line-through; color: var(--text-soft); }
 .todo-del { background: none; border: none; color: var(--text-soft); font-size: 16px; cursor: pointer; padding: 0 4px; flex-shrink: 0; }
 .todo-del:hover { color: var(--danger); }
+
+/* 하위 항목(1단계까지만) — 부모 항목의 + 버튼으로 추가 */
+.todo-item.todo-child { margin-left: 22px; background: var(--bg-soft); }
+.todo-add-child {
+  background: none; border: 1px solid var(--border); border-radius: 50%;
+  color: var(--text-soft); width: 17px; height: 17px; line-height: 1;
+  font-size: 12px; cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.todo-add-child:hover { color: var(--accent); border-color: var(--accent); }
+
+/* 할 일 텍스트 클릭하면 나오는 인라인 수정 입력창 */
+.todo-edit-input {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 15px;
+  border: none; background: none; color: var(--text);
+  padding: 0; margin: 0;
+  outline: none;
+  border-bottom: 1.5px solid var(--accent);
+}
 
 /* ── 하단 일정 패널 ─────────────────────────── */
 .day-panel {
