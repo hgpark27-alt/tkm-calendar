@@ -1,6 +1,6 @@
 // ===== 로컬 전용 데이터 (구글 캘린더로 절대 안 올라감 — 이 컴퓨터에만 저장) =====
 // Electron이면 main 프로세스가 파일로 원자적 저장(Tack 방식), 브라우저 테스트 중이면 localStorage로 대체
-let localData = { recentTasks: [], personalTodos: [], personalEvents: [], icsUrl: '' };
+let localData = { recentTasks: [], personalTodos: [], personalEvents: [], icsUrl: '', calendarActivity: [] };
 
 async function loadLocalData() {
   if (window.api?.getLocalData) {
@@ -12,6 +12,7 @@ async function loadLocalData() {
   localData.personalTodos ??= [];
   localData.personalEvents ??= []; // "Personal" 일정 — 구글 캘린더로 절대 안 올라가고 이 컴퓨터에만 저장
   localData.icsUrl ??= '';
+  localData.calendarActivity ??= []; // 팀 일정 추가/수정/삭제 알림 로그 (최대 20개)
 }
 
 // ===== 개인 ICS 캘린더 구독 (설정에서 각자 등록 — 이 컴퓨터에만 저장, 팀과 무관) =====
@@ -381,11 +382,11 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-team-activity', tag: 'new', date: '7/24', text: '팀 일정 추가·수정·삭제 알림 (내가 올린 것도 포함)' },
   { id: 'u2026-personal-ics', tag: 'new', date: '7/29', text: '톱니 메뉴에서 개인 ICS 캘린더 연동 — 나만 보이는 로컬 일정' },
   { id: 'u2026-notes-tree', tag: 'new', date: '7/29', text: 'My Notes에 하위 항목(1단계) 추가, 텍스트 클릭해서 바로 수정' },
   { id: 'u2026-whats-new', tag: 'new', date: '7/29', text: '이 알림 — 최근 업데이트를 여기서 확인' },
   { id: 'u2026-resize', tag: 'improved', date: '7/22', text: '우하단 핸들로 창 폭 직접 조절 가능' },
-  { id: 'u2026-holidays', tag: 'new', date: '7/22', text: '대한민국 공휴일 자동 표시' },
 ];
 // 빨간 점(배지)과 목록에서 지우는 건 서로 다른 상태임 —
 // 배지는 팝업을 한 번 열어서 "확인"만 하면 사라짐(읽음 처리), 목록의 개별 항목은 ×로
@@ -395,6 +396,7 @@ function getSeenUpdateIds() {
 }
 function markAllUpdatesSeen() {
   localStorage.setItem('tkm_seen_updates', JSON.stringify(UPDATE_LOG.map(u => u.id)));
+  markAllActivitySeen();
   renderUpdatesBadge();
 }
 function getDismissedUpdateIds() {
@@ -406,40 +408,115 @@ function dismissUpdate(id) {
   localStorage.setItem('tkm_dismissed_updates', JSON.stringify([...dismissed]));
   renderUpdatesList();
 }
+
+// ── 팀 일정 변경 알림(추가/수정/삭제 — 본인이 한 것도 포함) ──
+// 실시간 웹훅이 없어서, 이미 한 번 봤던 달을 다시 불러올 때(2분 폴링/포커스 갱신) 직전 내용과
+// 비교해서 차이를 활동 기록으로 남기는 방식. 그래서 "이 위젯에서 아직 한 번도 안 본 달"의
+// 변경은 못 잡고, 감지도 몇 분 정도 늦을 수 있음(진짜 실시간 웹훅은 아님) — 알려진 한계.
+const ACTIVITY_LABEL = { added: '추가됨', changed: '수정됨', deleted: '삭제됨' };
+function diffAndLogActivity(oldEvents, newEvents) {
+  const oldById = new Map(oldEvents.map(e => [e.id, e]));
+  const newById = new Map(newEvents.map(e => [e.id, e]));
+  newById.forEach((ev, id) => {
+    const old = oldById.get(id);
+    if (!old) logActivity('added', ev);
+    else if (old.title !== ev.title || old.date !== ev.date || old.time !== ev.time || old.category !== ev.category) {
+      logActivity('changed', ev);
+    }
+  });
+  oldById.forEach((ev, id) => {
+    if (!newById.has(id)) logActivity('deleted', ev);
+  });
+}
+function logActivity(type, ev) {
+  localData.calendarActivity ??= [];
+  localData.calendarActivity.unshift({
+    id: 'act-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+    type, title: ev.title, date: ev.date, ts: Date.now()
+  });
+  localData.calendarActivity = localData.calendarActivity.slice(0, 20); // 최대 20개만 보관
+  persistLocalData();
+  renderUpdatesBadge();
+}
+function dismissActivity(id) {
+  localData.calendarActivity = (localData.calendarActivity || []).filter(a => a.id !== id);
+  persistLocalData();
+  renderUpdatesList();
+}
+function markAllActivitySeen() {
+  localStorage.setItem('tkm_activity_seen_at', String(Date.now()));
+}
+function hasUnseenActivity() {
+  const seenAt = parseInt(localStorage.getItem('tkm_activity_seen_at') || '0', 10);
+  return (localData.calendarActivity || []).some(a => a.ts > seenAt);
+}
+
 function renderUpdatesBadge() {
   const seen = getSeenUpdateIds();
-  const hasUnseen = UPDATE_LOG.some(u => !seen.includes(u.id));
+  const hasUnseenUpdate = UPDATE_LOG.some(u => !seen.includes(u.id));
+  const hasUnseen = hasUnseenUpdate || hasUnseenActivity();
   $('#updatesBadge').hidden = !hasUnseen;
+  $('#collapsedBadge').hidden = !hasUnseen; // 접힘 모드에서도 같은 상태로 표시
 }
+
 function renderUpdatesList() {
-  const dismissed = getDismissedUpdateIds();
-  const remaining = UPDATE_LOG.filter(u => !dismissed.includes(u.id));
   const list = $('#updatesList');
   list.innerHTML = '';
-  if (!remaining.length) {
+
+  const activity = localData.calendarActivity || [];
+  const dismissedUpdates = getDismissedUpdateIds();
+  const updates = UPDATE_LOG.filter(u => !dismissedUpdates.includes(u.id));
+
+  if (!activity.length && !updates.length) {
     list.innerHTML = '<li class="updates-empty">새 소식 없음</li>';
     resizeToContent();
     return;
   }
-  remaining.forEach(u => {
-    const li = document.createElement('li');
-    li.className = 'update-row';
-    li.innerHTML = `<span class="tag ${u.tag}">${u.tag}</span>`;
-    const body = document.createElement('div');
-    body.className = 'body';
-    body.innerHTML = `<span class="date">${u.date}</span><span class="text"></span>`;
-    body.querySelector('.text').textContent = u.text; // XSS 방지 — 텍스트는 innerHTML 말고 textContent로
-    li.appendChild(body);
-    const dismiss = document.createElement('button');
-    dismiss.type = 'button';
-    dismiss.className = 'dismiss';
-    dismiss.textContent = '×';
-    dismiss.title = '확인함';
-    dismiss.addEventListener('click', () => dismissUpdate(u.id)); // 확인한 사람이 직접 하나씩 닫음 — 자동으로 안 없어짐
-    li.appendChild(dismiss);
-    list.appendChild(li);
-  });
+
+  if (activity.length) {
+    const label = document.createElement('li');
+    label.className = 'updates-group-label';
+    label.textContent = 'Team Calendar';
+    list.appendChild(label);
+    activity.forEach(a => {
+      const tagClass = a.type; // added | changed | deleted — 그대로 CSS 클래스명으로 씀
+      list.appendChild(buildUpdateRow(tagClass, ACTIVITY_LABEL[a.type], `${a.date} · ${a.title}`, () => dismissActivity(a.id)));
+    });
+  }
+  if (updates.length) {
+    const label = document.createElement('li');
+    label.className = 'updates-group-label';
+    label.textContent = "What's New";
+    list.appendChild(label);
+    updates.forEach(u => {
+      list.appendChild(buildUpdateRow(u.tag, u.tag, `${u.date} · ${u.text}`, () => dismissUpdate(u.id)));
+    });
+  }
   resizeToContent();
+}
+
+function buildUpdateRow(tagClass, tagLabel, text, onDismiss) {
+  const li = document.createElement('li');
+  li.className = 'update-row';
+  const tag = document.createElement('span');
+  tag.className = 'tag ' + tagClass;
+  tag.textContent = tagLabel;
+  li.appendChild(tag);
+  const body = document.createElement('div');
+  body.className = 'body';
+  const textEl = document.createElement('span');
+  textEl.className = 'text';
+  textEl.textContent = text; // XSS 방지 — innerHTML 대신 textContent
+  body.appendChild(textEl);
+  li.appendChild(body);
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'dismiss';
+  dismiss.textContent = '×';
+  dismiss.title = '확인함';
+  dismiss.addEventListener('click', onDismiss); // 확인한 사람이 직접 하나씩 닫음 — 자동으로 안 없어짐
+  li.appendChild(dismiss);
+  return li;
 }
 
 // ===== 대한민국 공휴일 (프론트에서 표시용 — 구글 캘린더(우리 팀 일정) 데이터엔 전혀 영향 없음) =====
@@ -601,7 +678,7 @@ async function init() {
     const app = document.getElementById('app');
     if (!app.classList.contains('unfocused')) return;
     if (dragMoved) { dragMoved = false; return; } // 방금 드래그로 옮긴 거면 무시(어디서 손을 떼든 펼쳐지면 안 됨)
-    if (e.target.closest('.todo-check') || e.target.closest('.todo-del')) return; // 체크박스/삭제만 접힌 채로 처리, My Notes 나머지 부분은 눌러도 펼쳐짐
+    if (e.target.closest('.todo-check') || e.target.closest('.todo-del') || e.target.closest('.todo-add-child')) return; // 체크박스/삭제/하위추가만 접힌 채로 처리, My Notes 나머지 부분은 눌러도 펼쳐짐
     restoreOverlaysOnFocus();
   });
   // #app 크기가 바뀔 때마다(그리드/일정목록 등 무엇이 원인이든) 자동으로 창 크기 맞춤
@@ -675,6 +752,7 @@ async function loadMonth() {
   const res = await apiGet({ action: 'list', year: y, month: m });
   if (myToken !== loadToken) return; // 응답 오는 사이 다른 달로 이동함 — 이 결과는 폐기
   if (res.ok) {
+    if (cached) diffAndLogActivity(cached, res.events); // 이미 본 적 있는 달일 때만 비교 — 처음 보는 달은 전부 "추가됨"으로 오폭되는 걸 방지
     monthCache.set(key, res.events);
     state.events = res.events;
     renderAll();
@@ -1172,6 +1250,9 @@ function closeAllOverlaysOnBlur() {
   if (suppressBlurCollapse) return; // 우리 자신의 confirm()/alert() 때문에 뜬 blur — 무시
   if ($('#modalBackdrop').classList.contains('open')) closeAddModal();
   if ($('#recurringBackdrop').classList.contains('open')) { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }
+  if ($('#icsBackdrop').classList.contains('open')) { $('#icsBackdrop').classList.remove('open'); resizeToContent(); }
+  $('#updatesPopover').classList.remove('open');
+  $('#updatesBackdrop').classList.remove('open');
   closePopover();
   hideHoverTip();
 
