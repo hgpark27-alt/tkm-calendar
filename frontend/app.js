@@ -311,6 +311,10 @@ function deleteTodo(id) {
 // ===== 설정 =====
 const API_URL = 'https://script.google.com/macros/s/AKfycbybOFKkrFU7No0cJS1LG2rKVjXyTWcY5f2vYxEoEAPGWq6ckGBIPGACPcb0PrHP-Hb9yg/exec';
 const WIDGET_MAX_H = 700;
+// 달력 그리드는 항상 6주(42칸) 고정 렌더링이라(renderGrid 참고) 다이어리 모드 필요 높이는 달과
+// 무관하게 항상 동일 — 실측(CDP)으로 확인한 값에 여유를 살짝 더함. 모드 진입 시 한 번만 쓰고,
+// 그 뒤론 폭처럼 사용자가 우하단 핸들로 직접 조절(resizeToContent가 diaryMode일 때 손 안 댐)
+const DIARY_FIXED_H = 670;
 // 모달은 내용(반복 필드 펼침 등)에 따라 매번 정확히 측정하려다가 계속 버그가 났음(줌 배율,
 // 타이밍 등) — 모달 자체가 이미 max-height:86vh + overflow-y:auto라 넘치면 알아서 스크롤되니,
 // 그냥 넉넉한 고정 크기로 열고 모달 안쪽에서 스크롤로 해결함 (측정 안 하니 애초에 틀릴 일이 없음)
@@ -326,20 +330,25 @@ const MODAL_FIXED_H = 620;
 // 폭은 이제 우하단 핸들로 사용자가 직접 조절함(main/index.js resizable:true) — 여기서는
 // "지금 창의 실제 폭"을 그대로 유지하면서 높이만 내용에 맞게 다시 잡음. WIDGET_W 같은 고정값을
 // 쓰면 사용자가 넓혀놓은 폭을 매번 되돌려버리게 되므로 반드시 window.innerWidth를 그대로 씀
+// getBoundingClientRect는 소수점까지 정확 — scrollHeight(정수 반올림)로는 6주짜리 달(그리드 6행)에서
+// 반올림 오차가 누적돼 마지막 행이 잘리는 문제가 있었음. body{zoom}은 실제 계산된 값을 읽어서 곱함 —
+// 나중에 zoom 값이 바뀌어도 이 코드를 따로 안 고쳐도 항상 맞게 동작함
+function measureContentHeight() {
+  const target = document.getElementById('app').getBoundingClientRect().height;
+  const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
+  return Math.ceil(Math.max(target * bodyZoom, 120)) + 6;
+}
 function resizeToContent() {
+  // 다이어리 모드는 폭과 마찬가지로 높이도 사용자가 우하단 핸들로 직접 조절하게 둠(보드처럼 쓰는
+  // 용도라 위젯처럼 매번 내용 크기로 자동으로 되돌리면 대각선 리사이즈가 먹통이 됨) — 모드
+  // 진입/이탈 시점에만 setDiaryMode에서 직접 한 번 크기를 잡아주고, 그 뒤로는 손대지 않음
+  if (diaryMode) return;
   const currentW = window.innerWidth;
   if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open')) {
     window.api?.resize?.(currentW, MODAL_FIXED_H);
     return;
   }
-  // getBoundingClientRect는 소수점까지 정확 — scrollHeight(정수 반올림)로는
-  // 6주짜리 달(그리드 6행)에서 반올림 오차가 누적돼 마지막 행이 잘리는 문제가 있었음
-  const target = document.getElementById('app').getBoundingClientRect().height;
-  // CSS의 zoom 값을 하드코딩하지 않고 실제 계산된 값을 읽어서 곱함 — 나중에 zoom 값이
-  // 바뀌어도 여기 코드를 따로 안 고쳐도 항상 맞게 동작함
-  const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
-  const zoomedTarget = target * bodyZoom;
-  const requestedH = Math.min(Math.ceil(Math.max(zoomedTarget, 120)) + 6, WIDGET_MAX_H);
+  const requestedH = Math.min(measureContentHeight(), WIDGET_MAX_H);
   window.api?.resize?.(currentW, requestedH);
 }
 
@@ -382,11 +391,11 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-diary-mode', tag: 'new', date: '7/24', text: '다이어리 모드 — 제목표시줄 아이콘으로 옆으로 넓어지는 보드 형태(달력+My Notes+일정) 전환' },
   { id: 'u2026-update-ux', tag: 'improved', date: '7/24', text: '업데이트 방식 단순화 — 실행할 때 한 번 확인, 있으면 물어보고 Yes 하면 알아서 재시작까지 자동' },
   { id: 'u2026-team-activity', tag: 'new', date: '7/24', text: '팀 일정 추가·수정·삭제 알림 (내가 올린 것도 포함)' },
   { id: 'u2026-personal-ics', tag: 'new', date: '7/29', text: '톱니 메뉴에서 개인 ICS 캘린더 연동 — 나만 보이는 로컬 일정' },
   { id: 'u2026-notes-tree', tag: 'new', date: '7/29', text: 'My Notes에 하위 항목(1단계) 추가, 텍스트 클릭해서 바로 수정' },
-  { id: 'u2026-whats-new', tag: 'new', date: '7/29', text: '이 알림 — 최근 업데이트를 여기서 확인' },
 ];
 // 빨간 점(배지)과 목록에서 지우는 건 서로 다른 상태임 —
 // 배지는 팝업을 한 번 열어서 "확인"만 하면 사라짐(읽음 처리), 목록의 개별 항목은 ×로
@@ -835,7 +844,7 @@ function renderGrid() {
   const grid = $('#grid');
   grid.innerHTML = '';
   hideHoverTip(); // 그리드가 다시 그려지면(달 이동 등) 떠 있던 미리보기는 정리
-  grid.className = 'grid mode-' + state.viewMode;
+  grid.className = 'grid mode-' + state.viewMode + (diaryMode ? ' diary' : '');
 
   const firstDow = new Date(state.year, state.month - 1, 1).getDay(); // 0=일
   const daysInMonth = new Date(state.year, state.month, 0).getDate();
@@ -899,10 +908,13 @@ function renderGrid() {
 
     const dayEvents = eventsByDate[key] || [];
     if (dayEvents.length) {
-      if (state.viewMode === 'max') {
+      if (state.viewMode === 'max' || diaryMode) {
+        // 다이어리 모드는 칸이 훨씬 넉넉해서(위 CSS .grid.diary .cell) 최대 5개까지 그대로 보여줌 —
+        // 평소 최대 모드는 지금까지처럼 3개로 유지(칸 크기가 그대로라 5개는 안 들어감)
+        const cap = diaryMode ? 5 : 3;
         const chipsWrap = document.createElement('div');
         chipsWrap.className = 'chips-wrap';
-        dayEvents.slice(0, 3).forEach(ev => {
+        dayEvents.slice(0, cap).forEach(ev => {
           const row = document.createElement('div');
           row.className = 'chip-row';
           const dot = document.createElement('span');
@@ -914,10 +926,10 @@ function renderGrid() {
           row.append(dot, text);
           chipsWrap.appendChild(row);
         });
-        if (dayEvents.length > 3) {
+        if (dayEvents.length > cap) {
           const more = document.createElement('div');
           more.className = 'chip-more';
-          more.textContent = `+${dayEvents.length - 3} more`;
+          more.textContent = `+${dayEvents.length - cap} more`;
           chipsWrap.appendChild(more);
         }
         div.appendChild(chipsWrap);
@@ -1228,6 +1240,62 @@ function resettleSize() {
   setTimeout(resizeToContent, 200);
 }
 
+// ===== 다이어리 모드 =====
+// 기존 위젯 모습·기능은 전혀 안 건드리고, 버튼 하나로 옆으로 넓어지는 겉모습(폼)만 추가함.
+// 왼쪽 달력 칸도 같이 넉넉해져서 하루 일정을 최대 5개까지 그대로 보여주고(renderGrid의 diaryMode
+// 분기), 오른쪽엔 My Notes(위)·당일 일정(아래)이 새로 생김 — 실제 DOM은 복제하지 않고
+// #dayPanel/#personalTodo 노드를 그대로 옮겨서(reparent) 렌더링 로직 중복을 피함.
+let diaryMode = false;
+let widthBeforeDiary = null;
+const DIARY_EXTRA_W = 300; // .diary-col 너비만큼 창을 더 넓힘
+
+function setDiaryMode(on) {
+  if (diaryMode === on) return;
+  diaryMode = on;
+  const app = document.getElementById('app');
+  app.classList.toggle('diary-mode', on);
+  $('#diaryModeBtn').classList.toggle('active', on);
+
+  const widgetSlot = $('#widgetListSlot');
+  const diarySlot = $('#diaryListSlot');
+  let targetW;
+  if (on) {
+    widthBeforeDiary = window.innerWidth;
+    // 다이어리 모드에선 최대 모드의 "접힘" 설정과 무관하게 항상 펼쳐서 보여줌(접으면 오른쪽 패널에서 보일 게 없어짐)
+    state.dayPanelCollapsed = false;
+    updateDayPanelVisibility();
+    diarySlot.appendChild($('#personalTodo')); // My Notes를 위로
+    diarySlot.appendChild($('#dayPanel'));      // 당일 일정을 아래로
+    targetW = widthBeforeDiary + DIARY_EXTRA_W;
+  } else {
+    // 원래 순서(dayPanel -> divider -> personalTodo)로 복원
+    widgetSlot.insertBefore($('#dayPanel'), $('#listDivider'));
+    widgetSlot.appendChild($('#personalTodo'));
+    targetW = widthBeforeDiary || window.innerWidth;
+  }
+
+  renderGrid();
+  renderDayPanel();
+
+  if (on) {
+    // window.innerWidth/innerHeight는 네이티브 창 크기 변경 직후 곧바로 안 갱신되고 한 프레임 정도
+    // 늦게 반영됨 — 그 값을 곧바로 실측해서 되쓰면 "좁고 길게" 같은 엉뚱한 크기로 잘못 열리는 문제가
+    // 있었음(실측으로 확인). 다행히 달력 그리드는 달이 몇 주짜리든 항상 6주(42칸)로 고정 렌더링돼서
+    // (renderGrid 참고) 다이어리 모드의 필요 높이는 달과 무관하게 항상 똑같음 — 그래서 실측 대신
+    // 미리 확인해둔 고정값을 씀. 그 뒤로는 폭과 똑같이 사용자가 우하단 핸들로 직접 조절하게 둠
+    // (위 resizeToContent의 diaryMode 조기 반환 참고)
+    window.api?.resize?.(targetW, DIARY_FIXED_H);
+  } else {
+    // 위젯 모드 레이아웃은 세로 한 줄 쌓기라 높이가 폭에 안 좌우됨 — 그래서 폭을 바꾸기 전에
+    // (아직 다이어리 폭인 채로) 미리 실측해도 정확함. 이렇게 하면 폭+높이를 한 번에 같이
+    // 맞출 수 있어서, 진입 때와 마찬가지로 "좁고 길게/넓고 짧게" 같은 중간 단계 없이 바로 최종
+    // 크기로 열림
+    const finalH = Math.min(measureContentHeight(), WIDGET_MAX_H);
+    window.api?.resize?.(targetW, finalH);
+    resettleSize(); // 폰트 로딩 등 뒤늦은 변화에 대비한 안전망
+  }
+}
+
 // confirm()/alert()는 Electron에서 네이티브 대화상자라 뜨는 순간 창이 blur됨 —
 // "삭제할까요?" 확인창에 답했을 뿐인데 접힘모드로 착각해서 오늘 날짜로 튕기는 문제가 있었음.
 // 대화상자를 띄우기 직전/직후에 이 플래그를 켜서, 그 사이에 들어오는 blur는 무시함.
@@ -1248,6 +1316,7 @@ function safeAlert(msg) {
 // 일정 목록은 접고(My Notes 체크리스트는 유지) 오늘 날짜·오늘 달로 돌아감
 function closeAllOverlaysOnBlur() {
   if (suppressBlurCollapse) return; // 우리 자신의 confirm()/alert() 때문에 뜬 blur — 무시
+  if (diaryMode) return; // 다이어리 모드는 보드처럼 계속 펼쳐져 있어야 하므로 포커스를 잃어도 접지 않음
   if ($('#modalBackdrop').classList.contains('open')) closeAddModal();
   if ($('#recurringBackdrop').classList.contains('open')) { $('#recurringBackdrop').classList.remove('open'); resizeToContent(); }
   if ($('#icsBackdrop').classList.contains('open')) { $('#icsBackdrop').classList.remove('open'); resizeToContent(); }
@@ -1734,6 +1803,9 @@ function bindEvents() {
     updateDayPanelVisibility();
     resizeToContent();
   });
+
+  // ── 다이어리 모드 (버튼 하나로 옆으로 넓어지는 보드 형태, 기존 위젯은 그대로 유지) ──
+  $('#diaryModeBtn').addEventListener('click', () => setDiaryMode(!diaryMode));
 
   // ── 창 컨트롤 (Electron 연결 전까지는 window.api가 없어 조용히 무시됨) ──
   // 핀 고정 상태일 때는 비어있는(무채색) 아이콘, 고정 안 됐을 때만 강조색 — Tack과 동일한 관례

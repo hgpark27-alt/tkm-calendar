@@ -87,6 +87,36 @@ body {
   /* 높이는 고정하지 않음 — 콘텐츠 크기만큼만 차지, JS가 이 크기를 재서 창 크기를 맞춤 */
 }
 
+/* ── 다이어리 모드: 위젯은 그대로 두고 옆으로 넓어지는 보드 형태를 추가로 얹음 ───────────
+   창 크기 자체는 JS(setDiaryMode)가 최종 크기로 한 번에 맞추므로, 여기서 width를 애니메이션
+   시키면 그 사이 잘못된 중간 크기가 측정돼 창이 어긋나게 열림 — 그래서 transition 없이 즉시 전환.
+   폭은 고정 px가 아니라 flex 비율(58:42)로 둬서, 창을 가로로 더 넓게 늘리면 양쪽 다 그 비율
+   그대로 꽉 차게 늘어남(빈 공간 안 남게) */
+.app-body { display: flex; }
+.cal-col {
+  width: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+#app.diary-mode .cal-col { width: auto; flex: 58 1 0; min-width: 0; }
+.diary-col {
+  width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+}
+#app.diary-mode .diary-col { width: auto; flex: 42 1 0; min-width: 0; overflow-y: auto; overflow-x: hidden; }
+#diaryListSlot { padding: 10px 12px 14px; }
+/* 다이어리 모드에선 일정·My Notes가 오른쪽으로 옮겨가므로 왼쪽엔 달력만 남김(중복 방지) */
+#app.diary-mode .day-panel-toggle { display: none; }
+/* 오른쪽으로 옮겨간 뒤에는 구획선(.section-divider-thick)이 필요 없어서 숨김 — My Notes와
+   일정 패널 사이는 각자의 헤더로 이미 구분됨 */
+#diaryListSlot .section-divider-thick { display: none; }
+#diaryListSlot .personal-todo, #diaryListSlot .day-panel { padding: 0 0 14px; }
+#diaryListSlot .day-panel.collapsed { display: block; } /* 다이어리 모드에선 접힘 상태 무시 — 항상 펼쳐서 보여줌 */
+.icon-btn#diaryModeBtn.active { background: var(--accent-soft); color: var(--accent); }
+
 /* ── 타이틀 바 (창 컨트롤) ─────────────────────────── */
 .title-bar {
   display: flex;
@@ -316,6 +346,19 @@ body {
   gap: 2px;
 }
 .grid.mode-max .daynum { align-self: center; flex-shrink: 0; }
+/* 다이어리 모드: 칸을 위아래로 훨씬 넉넉하게 키워서(최대 5개) 업무명이 왠만하면 다 보이게 함 —
+   간단/최대 모드 설정(mode-max)과는 무관하게 diary 클래스만으로 독립적으로 동작해야 하므로
+   mode-max가 주는 레이아웃 속성(overflow/align-items 등)을 여기서도 그대로 갖춰줌 */
+.grid.diary .cell {
+  aspect-ratio: unset;
+  height: 116px;
+  overflow: hidden;
+  align-items: stretch;
+  padding-top: 4px;
+  gap: 2px;
+}
+.grid.diary .daynum { align-self: center; flex-shrink: 0; }
+.grid.diary .chip-text { font-size: 10.5px; }
 .chips-wrap { display: flex; flex-direction: column; gap: 1px; padding: 0 3px; overflow: hidden; min-width: 0; }
 .chip-row { display: flex; align-items: center; gap: 3px; min-width: 0; }
 .chip-row .dot { width: 4px; height: 4px; flex-shrink: 0; }

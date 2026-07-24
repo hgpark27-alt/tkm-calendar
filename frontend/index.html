@@ -14,6 +14,9 @@
         <button class="icon-btn" id="refreshBtn" aria-label="Refresh">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
         </button>
+        <button class="icon-btn" id="diaryModeBtn" aria-label="Diary mode" title="Diary mode">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+        </button>
         <button class="icon-btn" id="gearBtn" aria-label="Settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </button>
@@ -34,37 +37,47 @@
       <span class="collapsed-badge-dot" id="collapsedBadge" hidden></span>
     </div>
 
-    <header class="topbar">
-      <button class="nav-btn" id="prevMonth" aria-label="Previous month">‹</button>
-      <h1 class="month-title" id="monthTitle">Jul 2026</h1>
-      <button class="nav-btn" id="nextMonth" aria-label="Next month">›</button>
-      <button class="today-btn" id="todayBtn">Today</button>
-    </header>
+    <div class="app-body" id="appBody">
+      <div class="cal-col" id="calCol">
+        <header class="topbar">
+          <button class="nav-btn" id="prevMonth" aria-label="Previous month">‹</button>
+          <h1 class="month-title" id="monthTitle">Jul 2026</h1>
+          <button class="nav-btn" id="nextMonth" aria-label="Next month">›</button>
+          <button class="today-btn" id="todayBtn">Today</button>
+        </header>
 
-    <div class="weekday-row">
-      <span class="wd sun">Sun</span><span class="wd">Mon</span><span class="wd">Tue</span>
-      <span class="wd">Wed</span><span class="wd">Thu</span><span class="wd">Fri</span><span class="wd sat">Sat</span>
-    </div>
+        <div class="weekday-row">
+          <span class="wd sun">Sun</span><span class="wd">Mon</span><span class="wd">Tue</span>
+          <span class="wd">Wed</span><span class="wd">Thu</span><span class="wd">Fri</span><span class="wd sat">Sat</span>
+        </div>
 
-    <div class="grid" id="grid"></div>
+        <div class="grid" id="grid"></div>
 
-    <button class="day-panel-toggle" id="dayPanelToggle" hidden>Show list ▾</button>
+        <button class="day-panel-toggle" id="dayPanelToggle" hidden>Show list ▾</button>
 
-    <section class="day-panel" id="dayPanel">
-      <div class="day-panel-header">
-        <span id="selectedDateLabel">Select a date</span>
-        <button class="add-btn" id="openAdd" aria-label="Add event">+</button>
+        <div id="widgetListSlot">
+          <section class="day-panel" id="dayPanel">
+            <div class="day-panel-header">
+              <span id="selectedDateLabel">Select a date</span>
+              <button class="add-btn" id="openAdd" aria-label="Add event">+</button>
+            </div>
+            <ul class="event-list" id="eventList"></ul>
+          </section>
+
+          <div class="section-divider-thick" id="listDivider"></div>
+
+          <section class="personal-todo" id="personalTodo">
+            <div class="personal-todo-header">My Notes</div>
+            <input type="text" id="todoInput" class="todo-input" placeholder="Add a personal task and press Enter...">
+            <ul class="todo-list" id="todoList"></ul>
+          </section>
+        </div>
       </div>
-      <ul class="event-list" id="eventList"></ul>
-    </section>
 
-    <div class="section-divider-thick"></div>
-
-    <section class="personal-todo">
-      <div class="personal-todo-header">My Notes</div>
-      <input type="text" id="todoInput" class="todo-input" placeholder="Add a personal task and press Enter...">
-      <ul class="todo-list" id="todoList"></ul>
-    </section>
+      <div class="diary-col" id="diaryCol">
+        <div id="diaryListSlot"></div>
+      </div>
+    </div>
   </div>
 
   <div class="hover-tip" id="hoverTip"></div>

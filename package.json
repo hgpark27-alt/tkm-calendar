@@ -1,6 +1,6 @@
 {
   "name": "tkm-calendar",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "TKM Calendar — shared team calendar widget",
   "main": "main/index.js",
   "author": "Hansol IONES",
