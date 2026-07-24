@@ -107,7 +107,12 @@ body {
   border-left: 1px solid var(--border);
 }
 #app.diary-mode .diary-col { width: auto; flex: 42 1 0; min-width: 0; overflow-y: auto; overflow-x: hidden; }
-#diaryListSlot { padding: 10px 12px 14px; }
+/* My Notes(위)는 남는 세로 공간을 다 차지해서 목록이 잘리지 않고 최대한 많이 보이게,
+   일정(아래)은 그 밑에 고정으로 붙여서 항상 온전히 보이게 — 세로 폭 전체를 flex column으로 배분 */
+#diaryListSlot { padding: 10px 12px 14px; display: flex; flex-direction: column; min-height: 100%; }
+#diaryListSlot .personal-todo { flex: 1 1 auto; min-height: 120px; display: flex; flex-direction: column; }
+#diaryListSlot .todo-list { flex: 1 1 auto; min-height: 60px; max-height: none; }
+#diaryListSlot .day-panel { flex-shrink: 0; }
 /* 다이어리 모드에선 일정·My Notes가 오른쪽으로 옮겨가므로 왼쪽엔 달력만 남김(중복 방지) */
 #app.diary-mode .day-panel-toggle { display: none; }
 /* 오른쪽으로 옮겨간 뒤에는 구획선(.section-divider-thick)이 필요 없어서 숨김 — My Notes와
