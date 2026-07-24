@@ -382,11 +382,11 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-update-ux', tag: 'improved', date: '7/24', text: '업데이트 방식 단순화 — 실행할 때 한 번 확인, 있으면 물어보고 Yes 하면 알아서 재시작까지 자동' },
   { id: 'u2026-team-activity', tag: 'new', date: '7/24', text: '팀 일정 추가·수정·삭제 알림 (내가 올린 것도 포함)' },
   { id: 'u2026-personal-ics', tag: 'new', date: '7/29', text: '톱니 메뉴에서 개인 ICS 캘린더 연동 — 나만 보이는 로컬 일정' },
   { id: 'u2026-notes-tree', tag: 'new', date: '7/29', text: 'My Notes에 하위 항목(1단계) 추가, 텍스트 클릭해서 바로 수정' },
   { id: 'u2026-whats-new', tag: 'new', date: '7/29', text: '이 알림 — 최근 업데이트를 여기서 확인' },
-  { id: 'u2026-resize', tag: 'improved', date: '7/22', text: '우하단 핸들로 창 폭 직접 조절 가능' },
 ];
 // 빨간 점(배지)과 목록에서 지우는 건 서로 다른 상태임 —
 // 배지는 팝업을 한 번 열어서 "확인"만 하면 사라짐(읽음 처리), 목록의 개별 항목은 ×로
@@ -1653,24 +1653,30 @@ function bindEvents() {
     resizeToContent();
   });
 
-  // ── 수동 업데이트 확인 ──
-  $('#checkUpdateBtn')?.addEventListener('click', () => {
-    $('#updateStatus').textContent = 'Checking for updates...';
-    resizeToContent();
-    window.api?.checkForUpdates?.();
-  });
+  // ── 업데이트 — 평범한 앱처럼 심플하게: 실행할 때 딱 한 번 조회, 있으면 "업데이트 하시겠습니까?"
+  // 확인창 하나만 뜨고, Yes면 알아서 받아서 재시작까지 자동. 수동 확인 버튼은 없고 이 자리엔
+  // 평소엔 그냥 현재 버전 번호만 표시 ──
+  let updateConfirmAsked = false; // 같은 버전에 대해 확인창 중복으로 안 뜨게
+  const updateStatusEl = $('#updateStatus');
+  window.api?.getAppVersion?.().then((v) => { if (updateStatusEl && v) updateStatusEl.textContent = `TKM Calendar v${v}`; });
   window.api?.onUpdateStatus?.((data) => {
-    const messages = {
-      checking: 'Checking for updates...',
-      available: `Update found (v${data.extra})`,
-      downloading: `Downloading update... ${data.extra}%`,
-      'not-available': 'You have the latest version.',
-      downloaded: `Update ready (v${data.extra}) — restart to install.`,
-      error: data.extra ? `Update check failed: ${data.extra}` : 'Update check failed.'
-    };
-    const el = $('#updateStatus');
-    if (el) el.textContent = messages[data.status] || '';
-    resizeToContent();
+    if (data.status === 'available') {
+      if (updateConfirmAsked) return;
+      updateConfirmAsked = true;
+      if (safeConfirm(`업데이트 발견 (v${data.extra})\n업데이트 하시겠습니까?`)) {
+        if (updateStatusEl) updateStatusEl.textContent = '다운로드 중...';
+        window.api?.confirmUpdate?.();
+        resizeToContent();
+      }
+      return;
+    }
+    if (data.status === 'downloading' && updateStatusEl) {
+      updateStatusEl.textContent = `다운로드 중... ${data.extra}%`;
+      resizeToContent();
+    } else if (data.status === 'downloaded' && updateStatusEl) {
+      updateStatusEl.textContent = `설치 중입니다 — 곧 v${data.extra}로 재시작됩니다...`;
+      resizeToContent();
+    }
   });
 
   // ── What's New (종 아이콘) — 빨간 점은 한 번 열어보면 사라짐(읽음 처리),

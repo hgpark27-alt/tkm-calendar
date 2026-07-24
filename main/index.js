@@ -184,40 +184,34 @@ ipcMain.on('win-move-by', (e, dx, dy) => {
   win.setPosition(Math.round(x + dx), Math.round(y + dy))
 })
 
-// 자동 업데이트 상태를 렌더러(톱니 메뉴)에도 보여주기 위해 이벤트를 그대로 전달
+// 자동 업데이트 — 평범한 앱처럼: 실행할 때 한 번만 조회 -> 있으면 "업데이트 하시겠습니까?" 확인창 ->
+// Yes 누르면 그때 다운로드 -> 다 받으면 조용히 설치하고 자동으로 새 버전으로 재시작.
+// 주기적(6시간) 백그라운드 체크와 수동 확인 버튼은 "언제 됐는지 모르게 조용히 진행"돼서
+// 오히려 헷갈린다는 피드백으로 제거함 — 조회는 실행 시점 1회뿐, 못 찾거나 실패해도 조용히 넘어감
 function sendUpdateStatus(status, extra) {
   win?.webContents.send('update-status', { status, extra })
 }
-autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking'))
 autoUpdater.on('update-available', (info) => {
-  // 있는지 없는지부터 먼저 화면에 보여주고, 그 다음 단계로 다운로드 시작 —
-  // checkForUpdatesAndNotify()는 이 둘을 구분 없이 한번에 처리해서 반응이 뭉뚱그려 보였음
-  sendUpdateStatus('available', info.version)
-  autoUpdater.downloadUpdate()
+  sendUpdateStatus('available', info.version) // 여기서 다운로드 시작 안 함 — 렌더러가 Yes/No 확인창 띄우고, Yes일 때만 downloadUpdate() 요청
 })
 autoUpdater.on('download-progress', (p) => sendUpdateStatus('downloading', Math.round(p.percent)))
-autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'))
-autoUpdater.on('error', (err) => sendUpdateStatus('error', err?.message))
-autoUpdater.on('update-downloaded', (info) => sendUpdateStatus('downloaded', info.version))
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateStatus('downloaded', info.version)
+  // 렌더러가 "설치 중..." 문구를 잠깐 보여줄 시간을 준 뒤 조용히 설치 + 자동 재시작
+  setTimeout(() => autoUpdater.quitAndInstall(true, true), 800)
+})
 
-ipcMain.handle('check-for-updates', () => {
-  // 패키징 안 된 개발 모드(npx electron .)에서는 electron-updater가 조용히 아무것도 안 함 —
-  // 그러면 버튼이 그냥 안 되는 것처럼 보이니 이 경우만 바로 안내 메시지를 보내줌
-  if (!app.isPackaged) {
-    sendUpdateStatus('error', '개발 모드에서는 업데이트 확인이 안 됨(설치된 앱에서만 동작)')
-    return true
-  }
-  autoUpdater.checkForUpdates()
+ipcMain.handle('get-app-version', () => app.getVersion())
+ipcMain.handle('confirm-update', () => {
+  autoUpdater.downloadUpdate() // "업데이트 하시겠습니까?" 확인창에서 Yes 눌렀을 때만 호출됨
   return true
 })
 
 app.whenReady().then(() => {
   createWindow()
 
-  // 자동 업데이트 — 실행 시점(지금)과, 이후 6시간마다 GitHub Releases 확인 후 있으면
-  // 조용히 받아서 다음 실행 때 적용. 톱니 메뉴의 "Check for Updates"로 수동으로도 가능(위 핸들러)
-  autoUpdater.checkForUpdatesAndNotify()
-  setInterval(() => autoUpdater.checkForUpdatesAndNotify(), 6 * 60 * 60 * 1000)
+  // 실행 시점에 딱 한 번만 조회. 업데이트가 있으면 렌더러가 확인창을 띄움(위 update-available)
+  if (app.isPackaged) autoUpdater.checkForUpdates()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

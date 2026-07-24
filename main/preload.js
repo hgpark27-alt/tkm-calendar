@@ -21,7 +21,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   toggleAutoLaunch: () => ipcRenderer.invoke('toggle-auto-launch'),
-  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  confirmUpdate: () => ipcRenderer.invoke('confirm-update'),
   onUpdateStatus: (cb) => {
     const handler = (_e, data) => cb(data)
     ipcRenderer.on('update-status', handler)
