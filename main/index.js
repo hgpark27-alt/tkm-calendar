@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, screen } = require('electron')
 const { autoUpdater } = require('electron-updater')
 const path = require('path')
 const fs = require('fs')
+const { execFile } = require('child_process')
 
 // 이 위젯은 텍스트/CSS 위주라 GPU 가속이 딱히 필요 없음 — 켜져있으면 특히 그래픽카드가
 // 약하거나 가상화된 환경(회사 노트북, 원격 데스크톱 등)에서 GPU 프로세스 초기화 때문에
@@ -9,6 +10,20 @@ const fs = require('fs')
 app.disableHardwareAcceleration()
 
 app.setPath('userData', path.join(app.getPath('appData'), 'TKM Calendar'))
+
+// 창을 여러 개(자동실행 중복 등록, 실수로 두 번 실행 등) 띄우면 업데이트 설치 시 같은 실행파일을
+// 서로 물고 있어서 "Failed to uninstall old app files" 에러가 나는 원인이 됨 — 앱은 항상 하나만
+// 떠 있게 강제하고, 이미 떠 있는데 또 실행되면 새로 띄우는 대신 기존 창을 앞으로 가져옴
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  return
+}
+app.on('second-instance', () => {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+})
 
 const W = 243        // 기존 304의 80% — 렌더러의 CSS zoom:0.8과 짝을 맞춤(app.js의 WIDGET_W와 일치해야 함)
 const H_INITIAL = 340 // 초기값일 뿐, 로드 직후 렌더러가 실제 콘텐츠 크기로 다시 맞춤
@@ -137,13 +152,34 @@ ipcMain.handle('toggle-pin', () => {
 ipcMain.handle('get-local-data', () => loadLocalData())
 ipcMain.handle('save-local-data', (_, data) => { saveLocalData(data); return true })
 
-// 윈도우 시작 시 자동 실행 — 개발 모드(npx electron .)에서는 electron.exe 자체를 등록해버려서
-// 의미가 없고, 실제 설치된 앱(패키징된 실행 파일)에서만 제대로 동작함
-ipcMain.handle('get-auto-launch', () => app.getLoginItemSettings().openAtLogin)
+// 윈도우 시작 시 자동 실행 — 예전엔 app.setLoginItemSettings()(레지스트리 Run 키)를 썼는데 문제가 두 개 있었음:
+// 1) 개발 모드(npx electron .)에서 이 토글을 한 번이라도 켜면, 그때 실행 중이던 electron.exe
+//    자체가 이름이 다르다는 이유로(개발 모드 앱 이름은 "Electron") 실제 설치본 항목과 별개로
+//    레지스트리에 남아버려서, 부팅할 때마다 인자 없는 electron.exe가 실행되며 Electron 기본
+//    데모 화면이 뜸(실측으로 확인) — 반드시 패키징된 앱에서만 등록/해제되게 막아야 함.
+// 2) 레지스트리 Run 키 자체가 윈도우 정책상 로그인 직후 몇 초씩 일부러 지연 실행됨 — 작업
+//    스케줄러의 "로그온 시" 트리거는 이 지연 없이 바로 실행돼서 Tack 같은 앱들이 그래서 빠르게 뜸.
+// 그래서 레지스트리 대신 schtasks.exe로 작업 스케줄러에 등록하는 방식으로 교체함.
+const AUTO_LAUNCH_TASK = 'TKM Calendar AutoLaunch'
+function autoLaunchExists(cb) {
+  execFile('schtasks', ['/Query', '/TN', AUTO_LAUNCH_TASK], (err) => cb(!err))
+}
+ipcMain.handle('get-auto-launch', () => {
+  if (!app.isPackaged) return Promise.resolve(false) // 개발 모드에서는 항상 꺼짐으로 표시 — 등록 자체를 안 함
+  return new Promise((resolve) => autoLaunchExists(resolve))
+})
 ipcMain.handle('toggle-auto-launch', () => {
-  const next = !app.getLoginItemSettings().openAtLogin
-  app.setLoginItemSettings({ openAtLogin: next })
-  return next
+  if (!app.isPackaged) return Promise.resolve(false) // 개발 모드에서는 토글 무시 — 예전 버그 재발 방지
+  return new Promise((resolve) => {
+    autoLaunchExists((exists) => {
+      if (exists) {
+        execFile('schtasks', ['/Delete', '/TN', AUTO_LAUNCH_TASK, '/F'], () => resolve(false))
+      } else {
+        const exe = process.execPath
+        execFile('schtasks', ['/Create', '/TN', AUTO_LAUNCH_TASK, '/TR', `"${exe}"`, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'], (err) => resolve(!err))
+      }
+    })
+  })
 })
 
 // 개인 ICS 캘린더 구독 — 렌더러(브라우저 환경)에서 직접 fetch하면 CORS로 막히는 외부 주소가
@@ -188,6 +224,15 @@ ipcMain.on('win-move-by', (e, dx, dy) => {
 // Yes 누르면 그때 다운로드 -> 다 받으면 조용히 설치하고 자동으로 새 버전으로 재시작.
 // 주기적(6시간) 백그라운드 체크와 수동 확인 버튼은 "언제 됐는지 모르게 조용히 진행"돼서
 // 오히려 헷갈린다는 피드백으로 제거함 — 조회는 실행 시점 1회뿐, 못 찾거나 실패해도 조용히 넘어감
+//
+// electron-updater는 기본값(autoDownload:true)이 켜져 있으면 checkForUpdates()가 업데이트를
+// 찾자마자 그 자리에서 바로 다운로드까지 자동으로 진행해버림 — "확인창에서 Yes 눌러야 다운로드
+// 시작"이라고 아래 주석에 적어놓고 실제로는 이 기본값을 꺼둔 적이 없어서, 확인창은 그냥 보여주기용
+// 이었고 실제로는 사용자 응답과 무관하게 항상 자동으로 받아서 설치까지 진행되고 있었음(사용자가
+// "Yes 안 눌렀는데 지 혼자 꺼진다"고 겪은 문제의 원인). 반드시 꺼서 downloadUpdate()가 오직
+// confirm-update IPC(Yes 클릭)로만 시작되게 함.
+autoUpdater.autoDownload = false
+autoUpdater.autoInstallOnAppQuit = false
 function sendUpdateStatus(status, extra) {
   win?.webContents.send('update-status', { status, extra })
 }
@@ -209,6 +254,18 @@ ipcMain.handle('confirm-update', () => {
 
 app.whenReady().then(() => {
   createWindow()
+
+  // 예전 방식(레지스트리 Run 키)으로 켜져 있던 사용자가 있으면 한 번만 정리 —
+  // 꺼주고, 켜져 있었다면 새 방식(작업 스케줄러)으로 그대로 이어서 켜줌
+  if (app.isPackaged) {
+    try {
+      if (app.getLoginItemSettings().openAtLogin) {
+        app.setLoginItemSettings({ openAtLogin: false })
+        const exe = process.execPath
+        execFile('schtasks', ['/Create', '/TN', AUTO_LAUNCH_TASK, '/TR', `"${exe}"`, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'], () => {})
+      }
+    } catch (err) { console.error('[auto-launch migration]', err) }
+  }
 
   // 실행 시점에 딱 한 번만 조회. 업데이트가 있으면 렌더러가 확인창을 띄움(위 update-available)
   if (app.isPackaged) autoUpdater.checkForUpdates()
