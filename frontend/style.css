@@ -125,6 +125,15 @@ body {
 }
 #app.diary-mode .diary-divider:hover::after,
 #app.diary-mode .diary-divider.active::after { background: var(--accent); width: 2px; left: 2.5px; }
+/* 이거 드래그되는 핸들이라는 걸 눈으로 바로 알 수 있게 — 세로 중간에 작은 그립(점 두 줄) 표시 */
+.diary-divider::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 4px; height: 26px; transform: translate(-50%, -50%);
+  border-radius: 3px; background: var(--border);
+  box-shadow: 0 0 0 3px var(--bg); /* 선(::after) 위에 얹혀도 배경색으로 살짝 띄워서 뭉개지지 않게 */
+}
+#app.diary-mode .diary-divider:hover::before,
+#app.diary-mode .diary-divider.active::before { background: var(--accent); }
 /* My Notes(위)는 남는 세로 공간을 다 차지해서 목록이 잘리지 않고 최대한 많이 보이게,
    일정(아래)은 그 밑에 고정으로 붙여서 항상 온전히 보이게 — 세로 폭 전체를 flex column으로 배분 */
 #diaryListSlot { padding: 10px 12px 14px; display: flex; flex-direction: column; min-height: 100%; }
@@ -742,6 +751,7 @@ body {
 /* 글자색을 accent로 바꾸는 대신(테마 조합에 따라 대비가 약해질 수 있었음) 배경 하이라이트로만
    활성 표시 — 카테고리 칩(.chip.active)과 같은 방식이라 글자색은 항상 --text로 고정, 항상 잘 보임 */
 .popover-item.active { background: var(--accent-soft); font-weight: 600; }
+.popover-item:disabled { color: var(--text-soft); cursor: default; }
 .popover-divider { height: 1px; background: var(--border); margin: 6px 2px; }
 
 /* ── 접근성: 모션 최소화 ─────────────────────────── */

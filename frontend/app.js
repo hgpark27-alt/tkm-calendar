@@ -1799,9 +1799,20 @@ function bindEvents() {
 
   // ── 윈도우 시작 시 자동 실행 (Electron 전용 — 웹 버전은 window.api가 없어서 자동 무시됨) ──
   $('#autoLaunchBtn')?.addEventListener('click', async () => {
-    const next = await window.api?.toggleAutoLaunch?.();
-    $('#autoLaunchBtn').classList.toggle('active', !!next);
+    const btn = $('#autoLaunchBtn');
+    if (btn.disabled) return; // 처리 중 중복 클릭 방지
+    const wasOn = btn.classList.contains('active');
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '처리 중...'; // 시작프로그램 폴더에 바로가기를 만들고 지우는 동안(순간적이지만) 눌러도 반응 없어 보이지 않게
     resizeToContent();
+    const next = await window.api?.toggleAutoLaunch?.();
+    btn.disabled = false;
+    btn.classList.toggle('active', !!next);
+    // 끄려던 게 아니었는데 꺼진 상태로 남았으면 = 켜기 자체가 실패한 것(권한 문제 등) — 알려줌
+    btn.textContent = (!wasOn && !next) ? '실패 — 다시 시도' : original;
+    resizeToContent();
+    if (!wasOn && !next) setTimeout(() => { btn.textContent = original; resizeToContent(); }, 2500);
   });
 
   // ── 업데이트 — 평범한 앱처럼 심플하게: 실행할 때 딱 한 번 조회, 있으면 "업데이트 하시겠습니까?"

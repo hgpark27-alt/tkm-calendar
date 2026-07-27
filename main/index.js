@@ -152,32 +152,40 @@ ipcMain.handle('toggle-pin', () => {
 ipcMain.handle('get-local-data', () => loadLocalData())
 ipcMain.handle('save-local-data', (_, data) => { saveLocalData(data); return true })
 
-// 윈도우 시작 시 자동 실행 — 예전엔 app.setLoginItemSettings()(레지스트리 Run 키)를 썼는데 문제가 두 개 있었음:
-// 1) 개발 모드(npx electron .)에서 이 토글을 한 번이라도 켜면, 그때 실행 중이던 electron.exe
-//    자체가 이름이 다르다는 이유로(개발 모드 앱 이름은 "Electron") 실제 설치본 항목과 별개로
-//    레지스트리에 남아버려서, 부팅할 때마다 인자 없는 electron.exe가 실행되며 Electron 기본
-//    데모 화면이 뜸(실측으로 확인) — 반드시 패키징된 앱에서만 등록/해제되게 막아야 함.
-// 2) 레지스트리 Run 키 자체가 윈도우 정책상 로그인 직후 몇 초씩 일부러 지연 실행됨 — 작업
-//    스케줄러의 "로그온 시" 트리거는 이 지연 없이 바로 실행돼서 Tack 같은 앱들이 그래서 빠르게 뜸.
-// 그래서 레지스트리 대신 schtasks.exe로 작업 스케줄러에 등록하는 방식으로 교체함.
-const AUTO_LAUNCH_TASK = 'TKM Calendar AutoLaunch'
-function autoLaunchExists(cb) {
-  execFile('schtasks', ['/Query', '/TN', AUTO_LAUNCH_TASK], (err) => cb(!err))
+// 윈도우 시작 시 자동 실행 — 예전엔 app.setLoginItemSettings()(레지스트리 Run 키)를 썼는데,
+// 개발 모드(npx electron .)에서 이 토글을 한 번이라도 켜면 그때 실행 중이던 electron.exe 자체가
+// (개발 모드 앱 이름은 "Electron"이라 실제 설치본과 이름이 달라서) 별개 항목으로 레지스트리에
+// 남아버려서, 부팅할 때마다 인자 없는 electron.exe가 실행되며 Electron 기본 데모 화면이 떴었음
+// (실측으로 확인) — 반드시 패키징된 앱에서만 등록/해제되게 막아야 함.
+//
+// 처음엔 작업 스케줄러(schtasks, 로그온 시 트리거는 레지스트리 Run 키의 지연 실행 정책을 안 타서
+// 더 빠르게 뜸)로 바꿨는데, 실제로 써보니 "ERROR: Access is denied"로 실패함 — 회사 정책이
+// 일반 계정의 작업 스케줄러 등록 자체를 막아놓은 상태였음(schtasks /Create를 터미널에서 직접
+// 실행해서 확인). 그래서 시작프로그램 폴더에 바로가기(.lnk)를 만드는 방식으로 다시 바꿈 — 이건
+// 그냥 내 계정 폴더에 파일 하나 쓰는 거라 그 정책 제한을 안 받음(실측으로 쓰기 가능 확인).
+// 다만 로그인 직후 지연 실행 정책은 이 방식도 어느 정도 적용될 수 있어서, 빠른 실행이 100%
+// 보장되진 않음 — 이 회사 정책 안에서는 그 이상 손쓸 방법이 마땅치 않음.
+function startupShortcutPath() {
+  return path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'TKM Calendar.lnk')
 }
 ipcMain.handle('get-auto-launch', () => {
   if (!app.isPackaged) return Promise.resolve(false) // 개발 모드에서는 항상 꺼짐으로 표시 — 등록 자체를 안 함
-  return new Promise((resolve) => autoLaunchExists(resolve))
+  return Promise.resolve(fs.existsSync(startupShortcutPath()))
 })
 ipcMain.handle('toggle-auto-launch', () => {
   if (!app.isPackaged) return Promise.resolve(false) // 개발 모드에서는 토글 무시 — 예전 버그 재발 방지
+  const linkPath = startupShortcutPath()
   return new Promise((resolve) => {
-    autoLaunchExists((exists) => {
-      if (exists) {
-        execFile('schtasks', ['/Delete', '/TN', AUTO_LAUNCH_TASK, '/F'], () => resolve(false))
-      } else {
-        const exe = process.execPath
-        execFile('schtasks', ['/Create', '/TN', AUTO_LAUNCH_TASK, '/TR', `"${exe}"`, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'], (err) => resolve(!err))
-      }
+    if (fs.existsSync(linkPath)) {
+      try { fs.unlinkSync(linkPath) } catch (err) { console.error('[auto-launch] delete failed', err) }
+      resolve(fs.existsSync(linkPath)) // 삭제 실패 시(드묾) 상태를 있는 그대로 알려줌
+      return
+    }
+    const exe = process.execPath
+    const psCmd = `$s=(New-Object -COM WScript.Shell).CreateShortcut('${linkPath}'); $s.TargetPath='${exe}'; $s.Save()`
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCmd], (err) => {
+      if (err) console.error('[auto-launch] create failed', err)
+      resolve(fs.existsSync(linkPath))
     })
   })
 })
@@ -264,13 +272,15 @@ app.whenReady().then(() => {
   createWindow()
 
   // 예전 방식(레지스트리 Run 키)으로 켜져 있던 사용자가 있으면 한 번만 정리 —
-  // 꺼주고, 켜져 있었다면 새 방식(작업 스케줄러)으로 그대로 이어서 켜줌
+  // 꺼주고, 켜져 있었다면 새 방식(시작프로그램 폴더 바로가기)으로 그대로 이어서 켜줌
   if (app.isPackaged) {
     try {
       if (app.getLoginItemSettings().openAtLogin) {
         app.setLoginItemSettings({ openAtLogin: false })
+        const linkPath = startupShortcutPath()
         const exe = process.execPath
-        execFile('schtasks', ['/Create', '/TN', AUTO_LAUNCH_TASK, '/TR', `"${exe}"`, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'], () => {})
+        const psCmd = `$s=(New-Object -COM WScript.Shell).CreateShortcut('${linkPath}'); $s.TargetPath='${exe}'; $s.Save()`
+        execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCmd], () => {})
       }
     } catch (err) { console.error('[auto-launch migration]', err) }
   }
