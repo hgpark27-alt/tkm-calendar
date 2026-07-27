@@ -204,11 +204,74 @@ function findTodoAndParent(id) {
   }
   return { todo: null, parent: null };
 }
+function findParentIdOfChild(childId) {
+  const parent = localData.personalTodos.find(t => (t.children || []).some(c => c.id === childId));
+  return parent ? parent.id : null;
+}
+
+// ===== My Notes 드래그로 순서 바꾸기 =====
+// 같은 급(최상위끼리, 또는 같은 부모의 자식끼리)에서만 순서가 바뀜 — 부모/자식 관계 자체는
+// 드래그로 안 바뀜(1단계 트리 구조 유지). 핸들은 텍스트(.todo-text) 부분만 — 체크박스/×/+
+// 버튼은 그대로 각자의 클릭 동작만 하게 둠. 접힘 모드에서도 드래그로 순서를 바꿀 수 있어야
+// 하는데, 드래그가 끝난 뒤 이어지는 click 이벤트가 "펼치기"나 "편집 시작"을 트리거하면 안 되므로
+// suppressNoteClick 플래그로 그 다음 click 한 번만 무시함(위쪽 window-move 드래그의 dragMoved와 같은 패턴)
+let draggingNoteId = null;
+let suppressNoteClick = false;
+function reorderNote(parentId, draggedId, targetId) {
+  const arr = parentId ? (localData.personalTodos.find(t => t.id === parentId)?.children || []) : localData.personalTodos;
+  const fromIdx = arr.findIndex(t => t.id === draggedId);
+  const toIdx = arr.findIndex(t => t.id === targetId);
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+  const [item] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, item);
+}
+function startNoteDrag(e, todo, parentId) {
+  if (e.button !== 0) return;
+  const startX = e.clientX, startY = e.clientY;
+  let dragging = false;
+  let lastOverId = null;
+  const onMove = (ev) => {
+    if (!dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 5) {
+      dragging = true;
+      draggingNoteId = todo.id;
+      $('#todoList').classList.add('reordering');
+      renderPersonalTodos();
+    }
+    if (!dragging) return;
+    const overEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.todo-item');
+    if (!overEl) return;
+    const overId = overEl.dataset.id;
+    if (overId === todo.id || overId === lastOverId) return;
+    const overIsChild = overEl.classList.contains('todo-child');
+    if (parentId) {
+      if (!overIsChild || findParentIdOfChild(overId) !== parentId) return; // 자식은 같은 부모의 자식끼리만
+    } else if (overIsChild) {
+      return; // 최상위는 최상위끼리만
+    }
+    lastOverId = overId;
+    reorderNote(parentId, todo.id, overId);
+    renderPersonalTodos();
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if (dragging) {
+      draggingNoteId = null;
+      $('#todoList').classList.remove('reordering');
+      persistLocalData();
+      renderPersonalTodos();
+      suppressNoteClick = true;
+      setTimeout(() => { suppressNoteClick = false; }, 50);
+    }
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
 
 function buildTodoRow(todo, parentId) {
   const isChild = !!parentId;
   const li = document.createElement('li');
-  li.className = 'todo-item' + (isChild ? ' todo-child' : '');
+  li.className = 'todo-item' + (isChild ? ' todo-child' : '') + (todo.id === draggingNoteId ? ' todo-dragging' : '');
   li.dataset.id = todo.id;
 
   const check = document.createElement('button');
@@ -221,8 +284,9 @@ function buildTodoRow(todo, parentId) {
   const text = document.createElement('span');
   text.className = 'todo-text' + (todo.done ? ' done' : '');
   text.textContent = todo.text;
-  text.title = '클릭해서 수정';
-  text.addEventListener('click', () => startEditTodo(todo.id));
+  text.title = '드래그해서 순서 변경, 클릭해서 수정';
+  text.addEventListener('mousedown', (e) => startNoteDrag(e, todo, parentId));
+  text.addEventListener('click', () => { if (!suppressNoteClick) startEditTodo(todo.id); });
   li.appendChild(text);
 
   if (!isChild) {
@@ -391,11 +455,11 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-diary-polish', tag: 'improved', date: '7/27', text: '다이어리 모드 개선 — My Notes 드래그로 순서 변경, 달력/My Notes 폭 조절 핸들, 창 높이에 맞춰 내용 꽉 차게' },
   { id: 'u2026-update-fix', tag: 'fix', date: '7/27', text: '업데이트/자동실행 안정화 — 확인 안 눌러도 자동 진행되던 버그, 시작프로그램 오류 화면 뜨던 문제 수정' },
   { id: 'u2026-diary-mode', tag: 'new', date: '7/24', text: '다이어리 모드 — 제목표시줄 아이콘으로 옆으로 넓어지는 보드 형태(달력+My Notes+일정) 전환' },
   { id: 'u2026-update-ux', tag: 'improved', date: '7/24', text: '업데이트 방식 단순화 — 실행할 때 한 번 확인, 있으면 물어보고 Yes 하면 알아서 재시작까지 자동' },
   { id: 'u2026-team-activity', tag: 'new', date: '7/24', text: '팀 일정 추가·수정·삭제 알림 (내가 올린 것도 포함)' },
-  { id: 'u2026-personal-ics', tag: 'new', date: '7/29', text: '톱니 메뉴에서 개인 ICS 캘린더 연동 — 나만 보이는 로컬 일정' },
 ];
 // 빨간 점(배지)과 목록에서 지우는 건 서로 다른 상태임 —
 // 배지는 팝업을 한 번 열어서 "확인"만 하면 사라짐(읽음 처리), 목록의 개별 항목은 ×로
@@ -684,6 +748,7 @@ async function init() {
   // 포커스를 얻는 것 자체(win-focus)로는 안 펼침 — 손잡이를 눌러서 창을 옮기기만 해도
   // OS 포커스는 얻어지기 때문에, 펼치는 건 "실제로 클릭(드래그 아님)했을 때"로만 판단함
   document.addEventListener('click', (e) => {
+    if (suppressNoteClick) { suppressNoteClick = false; return; } // 방금 노트 드래그로 순서 바꾼 직후 — 펼침도 편집도 트리거 안 함
     const app = document.getElementById('app');
     if (!app.classList.contains('unfocused')) return;
     if (dragMoved) { dragMoved = false; return; } // 방금 드래그로 옮긴 거면 무시(어디서 손을 떼든 펼쳐지면 안 됨)
@@ -1248,6 +1313,12 @@ function resettleSize() {
 let diaryMode = false;
 let widthBeforeDiary = null;
 const DIARY_EXTRA_W = 300; // .diary-col 너비만큼 창을 더 넓힘
+// 다이어리 모드는 내용이 창 크기에 맞춰 늘어나고 줄어들어서(그리드가 남는 공간을 다 채움),
+// 너무 작으면 칸이 못 알아보게 찌그러짐 — 그래서 이 모드에서만 최소 크기를 더 크게 잡음
+const DIARY_MIN_W = 520, DIARY_MIN_H = 480;
+const WIDGET_MIN_W = 200, WIDGET_MIN_H = 100; // main/index.js의 BrowserWindow 기본값과 일치
+// 달력/My Notes 칸 폭 조절 핸들의 최소값 — 이 이상 좁아지면 못 알아보므로 드래그가 여기서 멈춤
+const MIN_CAL_COL_W = 260, MIN_DIARY_COL_W = 220;
 
 function setDiaryMode(on) {
   if (diaryMode === on) return;
@@ -1255,6 +1326,7 @@ function setDiaryMode(on) {
   const app = document.getElementById('app');
   app.classList.toggle('diary-mode', on);
   $('#diaryModeBtn').classList.toggle('active', on);
+  window.api?.setMinSize?.(on ? DIARY_MIN_W : WIDGET_MIN_W, on ? DIARY_MIN_H : WIDGET_MIN_H);
 
   const widgetSlot = $('#widgetListSlot');
   const diarySlot = $('#diaryListSlot');
@@ -1272,6 +1344,11 @@ function setDiaryMode(on) {
     widgetSlot.insertBefore($('#dayPanel'), $('#listDivider'));
     widgetSlot.appendChild($('#personalTodo'));
     targetW = widthBeforeDiary || window.innerWidth;
+    // 핸들로 조절했던 폭 비율(인라인 style)을 지움 — 안 지우면 위젯 모드에서도 그 값이 그대로
+    // 적용돼서(인라인 스타일이 CSS 클래스보다 항상 우선) 레이아웃이 깨짐. 다음에 다시 들어오면
+    // 기본 비율(58:42)로 새로 시작함
+    $('#calCol').style.flex = '';
+    $('#diaryCol').style.flex = '';
   }
 
   renderGrid();
@@ -1292,7 +1369,12 @@ function setDiaryMode(on) {
     // 크기로 열림
     const finalH = Math.min(measureContentHeight(), WIDGET_MAX_H);
     window.api?.resize?.(targetW, finalH);
-    resettleSize(); // 폰트 로딩 등 뒤늦은 변화에 대비한 안전망
+    // resettleSize()는 여기서 쓰면 안 됨 — window.innerWidth가 방금 요청한 폭으로 실제 갱신되기
+    // 전에(한 프레임 지연) resizeToContent()가 먼저 돌면서 "아직 옛 폭(다이어리 모드 폭)"을 그대로
+    // 읽어다 다시 그 폭으로 resize를 호출해버려서, 방금 줄인 폭이 도로 넓어지는 버그가 있었음
+    // (실측으로 확인 — 다이어리 모드 해제해도 창이 안 줄어들던 문제의 원인). 폰트 로딩 등 뒤늦은
+    // 변화 보정은 다음 프레임부터 안전하게 재개
+    requestAnimationFrame(() => requestAnimationFrame(resettleSize));
   }
 }
 
@@ -1806,6 +1888,33 @@ function bindEvents() {
 
   // ── 다이어리 모드 (버튼 하나로 옆으로 넓어지는 보드 형태, 기존 위젯은 그대로 유지) ──
   $('#diaryModeBtn').addEventListener('click', () => setDiaryMode(!diaryMode));
+
+  // ── 다이어리 모드: 달력/My Notes 폭 조절 핸들 ──
+  // clientX는 실제(post-zoom) 좌표계인데 getBoundingClientRect()는 pre-zoom(1.25배 큰) 좌표계라
+  // 그대로 섞어 쓰면 어긋남(여백 버그와 같은 원인) — bodyZoom을 곱해서 같은 좌표계로 맞춤
+  $('#diaryDivider').addEventListener('mousedown', (e) => {
+    if (!diaryMode || e.button !== 0) return;
+    e.preventDefault();
+    const calCol = $('#calCol'), diaryColEl = $('#diaryCol'), divider = $('#diaryDivider');
+    divider.classList.add('active');
+    const onMove = (ev) => {
+      const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
+      const calLeft = calCol.getBoundingClientRect().left * bodyZoom;
+      const totalW = (calCol.getBoundingClientRect().width + diaryColEl.getBoundingClientRect().width) * bodyZoom;
+      let calW = ev.clientX - calLeft;
+      calW = Math.max(MIN_CAL_COL_W, Math.min(calW, totalW - MIN_DIARY_COL_W));
+      const calRatio = (calW / totalW) * 100;
+      calCol.style.flex = `${calRatio} 1 0`;
+      diaryColEl.style.flex = `${100 - calRatio} 1 0`;
+    };
+    const onUp = () => {
+      divider.classList.remove('active');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
 
   // ── 창 컨트롤 (Electron 연결 전까지는 window.api가 없어 조용히 무시됨) ──
   // 핀 고정 상태일 때는 비어있는(무채색) 아이콘, 고정 안 됐을 때만 강조색 — Tack과 동일한 관례

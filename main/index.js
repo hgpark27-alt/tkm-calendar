@@ -212,6 +212,14 @@ ipcMain.on('win-resize', (e, w, h) => {
   e.returnValue = null
 })
 
+// 다이어리 모드는 내용을 화면 크기에 맞춰 늘리고 줄이는 방식이라(그리드가 flex/grid로 남는 공간을
+// 다 채움), 너무 작게 줄이면 칸이 못 알아볼 정도로 찌그러짐 — 그래서 다이어리 모드에 들어갈 때만
+// 최소 크기를 더 크게 잡고, 나갈 때 원래 최소 크기(200x100)로 되돌림
+ipcMain.on('win-set-min-size', (e, w, h) => {
+  if (win) win.setMinimumSize(Math.round(w), Math.round(h))
+  e.returnValue = null
+})
+
 // -webkit-app-region:drag 대신 쓰는 커스텀 드래그 이동 — 렌더러가 mousemove 델타를 보내주면
 // 그만큼 창 위치를 옮김(OS 드래그 영역으로 지정하면 dblclick이 아예 안 뜨는 문제가 있어서 이렇게 함)
 ipcMain.on('win-move-by', (e, dx, dy) => {
