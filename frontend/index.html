@@ -68,7 +68,10 @@
 
           <section class="personal-todo" id="personalTodo">
             <div class="personal-todo-header">My Notes</div>
-            <input type="text" id="todoInput" class="todo-input" placeholder="Add a personal task and press Enter...">
+            <div class="todo-compose-row">
+              <input type="text" id="todoInput" class="todo-input" placeholder="Add a task and press Enter...">
+              <select id="todoAssignee" class="todo-assignee-select" title="보낼 대상"></select>
+            </div>
             <ul class="todo-list" id="todoList"></ul>
           </section>
         </div>
@@ -102,6 +105,8 @@
     <div class="popover-label" id="updateStatus"></div>
     <div class="popover-divider"></div>
     <button class="popover-item" id="openIcsSettings">Personal Calendar (ICS)</button>
+    <div class="popover-divider"></div>
+    <button class="popover-item" id="editUserNameBtn">내 이름 바꾸기</button>
   </div>
 
   <!-- 최근 업데이트 소식 (종 아이콘) -->
@@ -109,6 +114,28 @@
   <div class="popover popover-updates" id="updatesPopover">
     <div class="popover-label">What's New</div>
     <ul class="updates-list" id="updatesList"></ul>
+  </div>
+
+  <!-- 최초 실행 시 이름 입력 (공유 태스크 작성자 표시용, 비밀번호 없음, 이후 안 물어봄 —
+       설정 메뉴에서 "내 이름 바꾸기"로 다시 열면 닫기 버튼이 생기고 그 땐 취소 가능) -->
+  <div class="modal-backdrop" id="nameBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>이름을 알려주세요</h2>
+        <button class="close-btn" id="closeNameModal" aria-label="Close" hidden>×</button>
+      </div>
+      <p class="hint info" style="margin: 0 0 12px;">
+        My Notes(공유 태스크)에 누가 작성했는지 표시하려고 물어봐요. 비밀번호는 필요 없고,
+        한 번 정하면 다음부턴 안 물어봐요(톱니 메뉴에서 나중에 바꿀 수 있어요).
+      </p>
+      <label class="field field-primary">
+        <span>이름</span>
+        <input type="text" id="fUserName" placeholder="예: 박혜근">
+      </label>
+      <div class="modal-actions">
+        <button class="btn-primary" id="saveUserName">시작하기</button>
+      </div>
+    </div>
   </div>
 
   <!-- 개인 ICS 캘린더 연동 -->

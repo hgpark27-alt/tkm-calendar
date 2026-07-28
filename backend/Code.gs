@@ -10,6 +10,12 @@
 // ===== 설정 =====
 const CALENDAR_ID = '4b9c15c5a0e715482c08ecf5b10482391754fd997bb4fe7d5b3615cb5991b31c@group.calendar.google.com';
 
+// 공유 태스크(My Notes 공유 항목) 저장용 구글 시트 — 캘린더와는 완전히 별개 저장소.
+// 1. drive.google.com에서 새 스프레드시트 하나 만들기(이름 아무거나, 예: "TKM Shared Tasks")
+// 2. 주소창 URL에서 /d/ 와 /edit 사이의 긴 문자열이 시트 ID — 그걸 아래에 붙여넣기
+// 3. 시트 자체엔 아무것도 안 적어도 됨 — 처음 호출될 때 코드가 알아서 헤더 행을 만듦
+const TASKS_SHEET_ID = '1eItxuKa_bGT6yE9S9F0Jo4JwLzxiayU1FYzC3-0pWXU';
+
 // 카테고리 → Google Calendar colorId(1~11) 매핑. 이 순서가 그대로 프론트엔드 칩 표시 순서가 됨.
 // 카테고리 추가 시 여기에만 한 줄 추가하면 됨.
 const CATEGORY_COLORS = {
@@ -41,6 +47,12 @@ function doGet(e) {
     if (action === 'holidays') {
       return { holidays: getKrHolidays() };
     }
+    if (action === 'tasksList') {
+      return { tasks: listTasks() };
+    }
+    if (action === 'membersList') {
+      return { members: listMembers() };
+    }
     throw new Error('알 수 없는 action: ' + action);
   });
 }
@@ -52,6 +64,12 @@ function doPost(e) {
     if (body.action === 'add')    return { event: addEvent(body) };
     if (body.action === 'update') return { event: updateEvent(body) };
     if (body.action === 'delete') return deleteEvent(body.eventId, body.deleteSeries);
+    if (body.action === 'taskAdd')     return addTask(body);
+    if (body.action === 'taskToggle')  return toggleTask(body);
+    if (body.action === 'taskUpdate')  return updateTaskText(body);
+    if (body.action === 'taskDelete')  return deleteTask(body.id);
+    if (body.action === 'taskReorder') return reorderTask(body);
+    if (body.action === 'memberRegister') return registerMember(body.name);
     throw new Error('알 수 없는 action: ' + body.action);
   });
 }
@@ -310,8 +328,178 @@ function parseKrHolidayIcs_(ics) {
   return result;
 }
 
+// ===== 공유 태스크 (My Notes 공유 항목) — 구글 시트를 간단한 DB로 사용 =====
+// 캘린더에 안 보이는 날짜(예: 아주 먼 옛날)에 이벤트로 숨겨서 DB처럼 쓰는 방법도 검토했었는데,
+// 실제 사람이 보는 캘린더랑 같은 공간이라 실수로 지워질 위험이 있고(휴대폰 구독 등에서 우연히
+// 보일 수도 있음), month 단위 조회 코드(listEvents)와 완전히 다른 조회 방식이 필요해서 코드량
+// 이득도 없음 — 그래서 사람 눈에 안 띄는 별도 시트를 씀. 1단계 트리(부모 1개당 자식 여러 개,
+// 자식의 자식은 없음)만 지원 — 프론트엔드 My Notes 구조와 동일하게 맞춤.
+const TASKS_SHEET_NAME = 'SharedTasks';
+// assignee 비어있으면 "모두에게 보냄"(전체 공개), 채워져 있으면 그 이름인 사람한테 보낸 태스크
+// (+ 원래 만든 사람(owner)한테도 항상 보임 — 자기가 누구한테 보냈는지는 알아야 하니까)
+const TASKS_HEADERS = ['id', 'text', 'done', 'parentId', 'order', 'owner', 'assignee', 'createdAt', 'updatedAt'];
+
+// 팀원 명단 — 최초 실행 때 이름 입력하면 여기 등록됨. "태스크 보내기" 드롭다운이 이 목록을 씀.
+// 태스크 시트랑 같은 스프레드시트 안에 탭만 하나 더 쓰는 것(별도 파일 안 만듦)
+const MEMBERS_SHEET_NAME = 'Members';
+const MEMBERS_HEADERS = ['name', 'firstSeenAt', 'lastSeenAt'];
+
+function getMembersSheet_() {
+  const ss = SpreadsheetApp.openById(TASKS_SHEET_ID);
+  let sheet = ss.getSheetByName(MEMBERS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(MEMBERS_SHEET_NAME);
+    sheet.appendRow(MEMBERS_HEADERS);
+  }
+  return sheet;
+}
+
+function listMembers() {
+  const sheet = getMembersSheet_();
+  const values = sheet.getDataRange().getValues();
+  return values.slice(1).filter(row => row[0]).map(row => row[0]);
+}
+
+// 이름이 이미 있으면 lastSeenAt만 갱신(멱등 — 매번 실행 때 불러도 안전), 없으면 새로 등록
+function registerMember(name) {
+  if (!name) throw new Error('이름이 없음');
+  const sheet = getMembersSheet_();
+  const values = sheet.getDataRange().getValues();
+  const now = new Date().toISOString();
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === name) {
+      sheet.getRange(i + 1, 3).setValue(now);
+      return { registered: false };
+    }
+  }
+  sheet.appendRow([name, now, now]);
+  return { registered: true };
+}
+
+function getTasksSheet_() {
+  const ss = SpreadsheetApp.openById(TASKS_SHEET_ID);
+  let sheet = ss.getSheetByName(TASKS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(TASKS_SHEET_NAME);
+    sheet.appendRow(TASKS_HEADERS);
+    return sheet;
+  }
+  // 컬럼(assignee 등)을 나중에 추가하면 이미 만들어진 시트의 1행(헤더)은 예전 그대로 남아서
+  // 값이 밀리는 문제가 생김 — 매번 코드의 TASKS_HEADERS랑 실제 1행을 비교해서 다르면 자동으로
+  // 고쳐줌(사람이 시트 열어서 직접 고칠 필요 없게)
+  const currentHeaders = sheet.getRange(1, 1, 1, TASKS_HEADERS.length).getValues()[0];
+  const matches = TASKS_HEADERS.every((h, i) => currentHeaders[i] === h);
+  if (!matches) {
+    sheet.getRange(1, 1, 1, TASKS_HEADERS.length).setValues([TASKS_HEADERS]);
+  }
+  return sheet;
+}
+
+function rowToTask_(headers, row) {
+  const task = {};
+  headers.forEach((h, i) => { task[h] = row[i]; });
+  task.done = task.done === true || task.done === 'TRUE';
+  return task;
+}
+
+// id로 행을 찾음 — 클라이언트가 행 번호를 기억해뒀다가 보내는 방식은 동시에 여러 명이 쓰면
+// 그 사이 행이 지워지거나 순서가 바뀌어서 엉뚱한 행을 건드릴 위험이 있음 — 그래서 요청마다
+// 매번 id로 다시 찾음(행이 몇 개 안 되는 규모라 성능 문제 없음)
+function findTaskRow_(sheet, id) {
+  const values = sheet.getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === id) return { rowIndex: i + 1, headers: values[0], row: values[i] };
+  }
+  return null;
+}
+
+function listTasks() {
+  const sheet = getTasksSheet_();
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  return values.slice(1)
+    .filter(row => row[0]) // id 없는 빈 행 제외
+    .map(row => rowToTask_(headers, row));
+}
+
+function addTask(body) {
+  const sheet = getTasksSheet_();
+  const now = new Date().toISOString();
+  const id = 'task-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+  sheet.appendRow([
+    id,
+    body.text || '',
+    false,
+    body.parentId || '',
+    body.order || 0,
+    body.owner || '',
+    body.assignee || '', // 빈 값 = 모두에게, 채워지면 그 사람 전용(+ owner에게도 항상 보임)
+    now,
+    now,
+  ]);
+  return { id: id };
+}
+
+function toggleTask(body) {
+  const sheet = getTasksSheet_();
+  const found = findTaskRow_(sheet, body.id);
+  if (!found) throw new Error('태스크를 찾을 수 없음: ' + body.id);
+  const doneColIdx = found.headers.indexOf('done') + 1;
+  const updatedAtColIdx = found.headers.indexOf('updatedAt') + 1;
+  const currentDone = found.row[doneColIdx - 1] === true || found.row[doneColIdx - 1] === 'TRUE';
+  const nextDone = !currentDone;
+  sheet.getRange(found.rowIndex, doneColIdx).setValue(nextDone);
+  sheet.getRange(found.rowIndex, updatedAtColIdx).setValue(new Date().toISOString());
+  return { done: nextDone };
+}
+
+function updateTaskText(body) {
+  const sheet = getTasksSheet_();
+  const found = findTaskRow_(sheet, body.id);
+  if (!found) throw new Error('태스크를 찾을 수 없음: ' + body.id);
+  const textColIdx = found.headers.indexOf('text') + 1;
+  const updatedAtColIdx = found.headers.indexOf('updatedAt') + 1;
+  sheet.getRange(found.rowIndex, textColIdx).setValue(body.text || '');
+  sheet.getRange(found.rowIndex, updatedAtColIdx).setValue(new Date().toISOString());
+  return {};
+}
+
+function deleteTask(id) {
+  const sheet = getTasksSheet_();
+  const found = findTaskRow_(sheet, id);
+  if (!found) return {}; // 이미 없으면 성공 취급(멱등 — 여러 명이 거의 동시에 지워도 에러 안 남)
+  sheet.deleteRow(found.rowIndex);
+  // 부모였다면 자식들도 같이 정리(1단계 트리라 자식의 자식은 없어서 한 번만 훑으면 됨)
+  const parentColIdx = found.headers.indexOf('parentId');
+  const values = sheet.getDataRange().getValues();
+  for (let i = values.length - 1; i >= 1; i--) {
+    if (values[i][parentColIdx] === id) sheet.deleteRow(i + 1);
+  }
+  return {};
+}
+
+function reorderTask(body) {
+  // body: { id, order } — 새 순서 값 하나만 저장. 여러 항목 순서를 한 번에 바꿔야 하면
+  // 프론트엔드가 바뀐 것마다 이 액션을 순서대로 여러 번 호출함
+  const sheet = getTasksSheet_();
+  const found = findTaskRow_(sheet, body.id);
+  if (!found) throw new Error('태스크를 찾을 수 없음: ' + body.id);
+  const orderColIdx = found.headers.indexOf('order') + 1;
+  sheet.getRange(found.rowIndex, orderColIdx).setValue(body.order);
+  return {};
+}
+
 // ===== 배포 후 스스로 테스트용 (Apps Script 편집기에서 이 함수를 직접 실행해보면 됨) =====
 function _selfTest() {
   const now = new Date();
   Logger.log(JSON.stringify(listEvents(now.getFullYear(), now.getMonth() + 1)));
+}
+function _selfTestTasks() {
+  // TASKS_SHEET_ID를 채워넣은 뒤 이 함수를 실행해서 시트/CRUD가 제대로 도는지 확인
+  const added = addTask({ text: '테스트 태스크', owner: '테스트' });
+  Logger.log('added: ' + JSON.stringify(added));
+  Logger.log('list: ' + JSON.stringify(listTasks()));
+  Logger.log('toggle: ' + JSON.stringify(toggleTask({ id: added.id })));
+  Logger.log('delete: ' + JSON.stringify(deleteTask(added.id)));
+  Logger.log('list after delete: ' + JSON.stringify(listTasks()));
 }

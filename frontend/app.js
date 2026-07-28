@@ -1,6 +1,6 @@
 // ===== 로컬 전용 데이터 (구글 캘린더로 절대 안 올라감 — 이 컴퓨터에만 저장) =====
 // Electron이면 main 프로세스가 파일로 원자적 저장(Tack 방식), 브라우저 테스트 중이면 localStorage로 대체
-let localData = { recentTasks: [], personalTodos: [], personalEvents: [], icsUrl: '', calendarActivity: [] };
+let localData = { recentTasks: [], personalTodos: [], personalEvents: [], icsUrl: '', calendarActivity: [], userName: '', tasksMigrated: false };
 
 async function loadLocalData() {
   if (window.api?.getLocalData) {
@@ -9,10 +9,12 @@ async function loadLocalData() {
     try { localData = JSON.parse(localStorage.getItem('tkm_localdata') || '{}'); } catch { localData = {}; }
   }
   localData.recentTasks ??= [];
-  localData.personalTodos ??= [];
+  localData.personalTodos ??= []; // 웹 이관 전 예전 My Notes 백업(이관 끝나면 비워짐) — migrateLocalTasksIfNeeded 참고
   localData.personalEvents ??= []; // "Personal" 일정 — 구글 캘린더로 절대 안 올라가고 이 컴퓨터에만 저장
   localData.icsUrl ??= '';
   localData.calendarActivity ??= []; // 팀 일정 추가/수정/삭제 알림 로그 (최대 20개)
+  localData.userName ??= ''; // My Notes(공유 태스크) 작성자 표시용 — 최초 1회만 물어봄(ensureUserName)
+  localData.tasksMigrated ??= false;
 }
 
 // ===== 개인 ICS 캘린더 구독 (설정에서 각자 등록 — 이 컴퓨터에만 저장, 팀과 무관) =====
@@ -182,12 +184,32 @@ function renderRecentChips() {
   resizeToContent();
 }
 
-// My Notes는 딱 1단계까지만 하위 항목을 허용함(트리 아님, 부모-자식 한 겹만) — 단순화.
-// 데이터 모양: { id, text, done, children?: [{id, text, done}] }
+// My Notes는 이제 이 컴퓨터에만 있는 게 아니라 구글 시트를 통해 팀 전체가 공유하는 태스크임 —
+// sharedTasks에 서버가 준 평평한(flat) 목록을 그대로 두고, 화면에 그릴 때만 parentId 기준으로
+// 부모-자식(1단계까지만) 트리 모양으로 다시 묶음. 태스크는 "보낸 대상"(assignee)이 있어서 —
+// 비어있으면 전체 공개, 채워져 있으면 그 사람 또는 만든 사람(owner) 눈에만 보임(visibleTaskTree).
+let sharedTasks = [];
+let members = [];
+let composeAssignee = ''; // 새 노트 작성 중 "보낼 대상" 선택값 — 비어있으면 전체
+
+function visibleTaskTree() {
+  const mine = sharedTasks.filter(t => !t.assignee || t.assignee === localData.userName || t.owner === localData.userName);
+  const byId = new Map(mine.map(t => [t.id, { ...t, children: [] }]));
+  const roots = [];
+  byId.forEach(t => {
+    if (t.parentId && byId.has(t.parentId)) byId.get(t.parentId).children.push(t);
+    else roots.push(t);
+  });
+  const byOrder = (a, b) => (Number(a.order) || 0) - (Number(b.order) || 0);
+  roots.sort(byOrder);
+  roots.forEach(r => r.children.sort(byOrder));
+  return roots;
+}
+
 function renderPersonalTodos() {
   const list = $('#todoList');
   list.innerHTML = '';
-  localData.personalTodos.forEach(todo => {
+  visibleTaskTree().forEach(todo => {
     list.appendChild(buildTodoRow(todo, null));
     (todo.children || []).forEach(child => {
       list.appendChild(buildTodoRow(child, todo.id));
@@ -196,17 +218,38 @@ function renderPersonalTodos() {
   resizeToContent();
 }
 
+async function fetchSharedTasks() {
+  const res = await apiGet({ action: 'tasksList' });
+  if (res.ok) { sharedTasks = res.tasks; renderPersonalTodos(); }
+}
+async function fetchMembers() {
+  const res = await apiGet({ action: 'membersList' });
+  if (res.ok) { members = res.members; renderMemberSelect(); }
+}
+function renderMemberSelect() {
+  const sel = $('#todoAssignee');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const allOpt = document.createElement('option');
+  allOpt.value = ''; allOpt.textContent = '전체';
+  sel.appendChild(allOpt);
+  members.filter(name => name !== localData.userName).forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  sel.value = composeAssignee;
+}
+
 function findTodoAndParent(id) {
-  for (const todo of localData.personalTodos) {
-    if (todo.id === id) return { todo, parent: null };
-    const child = (todo.children || []).find(c => c.id === id);
-    if (child) return { todo: child, parent: todo };
-  }
-  return { todo: null, parent: null };
+  const todo = sharedTasks.find(t => t.id === id);
+  if (!todo) return { todo: null, parent: null };
+  const parent = todo.parentId ? sharedTasks.find(t => t.id === todo.parentId) : null;
+  return { todo, parent };
 }
 function findParentIdOfChild(childId) {
-  const parent = localData.personalTodos.find(t => (t.children || []).some(c => c.id === childId));
-  return parent ? parent.id : null;
+  const todo = sharedTasks.find(t => t.id === childId);
+  return todo ? (todo.parentId || null) : null;
 }
 
 // ===== My Notes 드래그로 순서 바꾸기 =====
@@ -217,13 +260,23 @@ function findParentIdOfChild(childId) {
 // suppressNoteClick 플래그로 그 다음 click 한 번만 무시함(위쪽 window-move 드래그의 dragMoved와 같은 패턴)
 let draggingNoteId = null;
 let suppressNoteClick = false;
+// sharedTasks가 이제 평평한 목록이라(부모 객체 안에 children 배열이 없음) 같은 그룹(parentId가
+// 같은 것들)만 뽑아서 순서를 다시 매김 — 그 결과를 sharedTasks 안의 실제 객체에 바로 반영(즉시
+// 화면 반영용). 서버 저장은 드래그 끝날 때(mouseup) 한 번에 함
 function reorderNote(parentId, draggedId, targetId) {
-  const arr = parentId ? (localData.personalTodos.find(t => t.id === parentId)?.children || []) : localData.personalTodos;
-  const fromIdx = arr.findIndex(t => t.id === draggedId);
-  const toIdx = arr.findIndex(t => t.id === targetId);
+  const groupIds = sharedTasks
+    .filter(t => (t.parentId || null) === (parentId || null))
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .map(t => t.id);
+  const fromIdx = groupIds.indexOf(draggedId);
+  const toIdx = groupIds.indexOf(targetId);
   if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
-  const [item] = arr.splice(fromIdx, 1);
-  arr.splice(toIdx, 0, item);
+  const [id] = groupIds.splice(fromIdx, 1);
+  groupIds.splice(toIdx, 0, id);
+  groupIds.forEach((tid, i) => {
+    const t = sharedTasks.find(x => x.id === tid);
+    if (t) t.order = i;
+  });
 }
 function startNoteDrag(e, todo, parentId) {
   if (e.button !== 0) return;
@@ -258,8 +311,11 @@ function startNoteDrag(e, todo, parentId) {
     if (dragging) {
       draggingNoteId = null;
       $('#todoList').classList.remove('reordering');
-      persistLocalData();
       renderPersonalTodos();
+      // 바뀐 그룹 전체의 새 순서를 서버에 반영 — 실패해도 다음 폴링 때 서버 값으로 다시 맞춰짐
+      sharedTasks
+        .filter(t => (t.parentId || null) === (parentId || null))
+        .forEach(t => apiPost({ action: 'taskReorder', id: t.id, order: t.order }));
       suppressNoteClick = true;
       setTimeout(() => { suppressNoteClick = false; }, 50);
     }
@@ -324,14 +380,14 @@ function startEditTodo(id) {
   input.select();
 
   let done = false;
-  const commit = () => {
+  const commit = async () => {
     if (done) return;
     done = true;
     const v = input.value.trim();
     if (!v) { deleteTodo(id); return; } // 비워두고 저장하면 그냥 삭제 취급
-    todo.text = v;
-    persistLocalData();
+    todo.text = v; // 낙관적 반영 — 서버 응답 기다리지 않고 바로 화면에 보여줌
     renderPersonalTodos();
+    await apiPost({ action: 'taskUpdate', id, text: v });
   };
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); commit(); }
@@ -340,40 +396,119 @@ function startEditTodo(id) {
   input.addEventListener('blur', commit);
 }
 
+// 새 최상위 노트를 추가할 때 정렬 순서를 기존 것보다 앞(더 작은 order)에 둬서 위로 올라오게 함
+// (예전 로컬 배열의 unshift와 같은 효과)
 function addPersonalTodo(text) {
   const t = (text || '').trim();
   if (!t) return;
-  localData.personalTodos.unshift({ id: 'todo-' + Date.now() + '-' + Math.random().toString(36).slice(2), text: t, done: false });
-  persistLocalData();
-  renderPersonalTodos();
+  const topLevel = sharedTasks.filter(x => !x.parentId);
+  const newOrder = topLevel.length ? Math.min(...topLevel.map(x => Number(x.order) || 0)) - 1 : 0;
+  const owner = localData.userName, assignee = composeAssignee;
+  apiPost({ action: 'taskAdd', text: t, owner, assignee, parentId: '', order: newOrder }).then(res => {
+    if (!res.ok) return;
+    sharedTasks.push({ id: res.id, text: t, done: false, parentId: '', order: newOrder, owner, assignee, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    renderPersonalTodos();
+  });
 }
 function addChildTodo(parentId) {
-  const parent = localData.personalTodos.find(t => t.id === parentId);
+  const parent = sharedTasks.find(t => t.id === parentId);
   if (!parent) return;
-  parent.children ??= [];
-  const child = { id: 'todo-' + Date.now() + '-' + Math.random().toString(36).slice(2), text: '', done: false };
-  parent.children.push(child);
-  persistLocalData();
-  renderPersonalTodos();
-  startEditTodo(child.id); // 추가하자마자 바로 입력할 수 있게
+  const siblings = sharedTasks.filter(t => t.parentId === parentId);
+  const newOrder = siblings.length ? Math.max(...siblings.map(t => Number(t.order) || 0)) + 1 : 0;
+  const owner = localData.userName, assignee = parent.assignee || ''; // 하위 항목은 상위 항목의 "보낸 대상"을 그대로 물려받음
+  apiPost({ action: 'taskAdd', text: '', owner, assignee, parentId, order: newOrder }).then(res => {
+    if (!res.ok) return;
+    sharedTasks.push({ id: res.id, text: '', done: false, parentId, order: newOrder, owner, assignee, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    renderPersonalTodos();
+    startEditTodo(res.id); // 추가하자마자 바로 입력할 수 있게
+  });
 }
 function toggleTodo(id) {
   const { todo } = findTodoAndParent(id);
-  if (todo) todo.done = !todo.done;
-  persistLocalData();
+  if (!todo) return;
+  todo.done = !todo.done; // 낙관적 반영
   renderPersonalTodos();
+  apiPost({ action: 'taskToggle', id });
 }
 function deleteTodo(id) {
-  localData.personalTodos = localData.personalTodos.filter(x => x.id !== id);
-  localData.personalTodos.forEach(t => {
-    if (t.children) t.children = t.children.filter(c => c.id !== id);
-  });
-  persistLocalData();
+  sharedTasks = sharedTasks.filter(t => t.id !== id && t.parentId !== id); // 부모면 자식(1단계)도 같이 정리
   renderPersonalTodos();
+  apiPost({ action: 'taskDelete', id });
+}
+
+// 최초 실행 시 이름 하나만 물어봄(비밀번호 없음, 취소 불가) — 이후엔 이 컴퓨터에 저장된 이름을
+// 계속 씀. 팀원 명단(Members)에도 등록해서 "태스크 보내기" 드롭다운에 뜨게 함. 톱니 메뉴의
+// "내 이름 바꾸기"는 같은 모달을 취소 가능하게(닫기 버튼 보이게) 다시 열어서 재사용함(editUserName)
+function openNamePrompt(cancelable) {
+  return new Promise((resolve) => {
+    $('#nameBackdrop').classList.add('open');
+    $('#closeNameModal').hidden = !cancelable;
+    resizeToContent();
+    const input = $('#fUserName');
+    input.value = localData.userName || '';
+    const btn = $('#saveUserName');
+    const closeBtn = $('#closeNameModal');
+    let done = false;
+    const cleanup = () => {
+      done = true;
+      btn.removeEventListener('click', submit);
+      input.removeEventListener('keydown', onKey);
+      closeBtn.removeEventListener('click', onCancel);
+      $('#nameBackdrop').classList.remove('open');
+      resizeToContent();
+    };
+    const onKey = (e) => { if (e.key === 'Enter') submit(); };
+    const onCancel = () => { if (done) return; cleanup(); resolve(); };
+    const submit = async () => {
+      if (done) return;
+      const v = input.value.trim();
+      if (!v) { input.focus(); return; }
+      const changed = v !== localData.userName;
+      cleanup();
+      localData.userName = v;
+      persistLocalData();
+      if (changed) {
+        await apiPost({ action: 'memberRegister', name: v });
+        await fetchMembers();
+        renderPersonalTodos(); // 이름이 바뀌면 owner 기준 필터링 결과도 바뀔 수 있어서 다시 그림
+      }
+      resolve();
+    };
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', onKey);
+    closeBtn.addEventListener('click', onCancel);
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+  });
+}
+function ensureUserName() {
+  if (localData.userName) return Promise.resolve();
+  return openNamePrompt(false); // 최초 1회는 취소 불가(이름 없이는 못 닫음)
+}
+function editUserName() {
+  return openNamePrompt(true); // 설정 메뉴에서 다시 열 땐 취소 가능
+}
+
+// 예전(웹 연동 전) 로컬 전용 My Notes가 남아있으면 딱 한 번만 웹으로 그대로 옮김 — 안 그러면
+// 업데이트하는 순간 그동안 적어둔 개인 노트들이 안 보이게(사라진 것처럼) 될 뻔했음
+async function migrateLocalTasksIfNeeded() {
+  if (localData.tasksMigrated) return;
+  const old = localData.personalTodos || [];
+  for (const parent of old) {
+    const res = await apiPost({ action: 'taskAdd', text: parent.text, owner: localData.userName, assignee: '', parentId: '', order: 0 });
+    if (!res.ok) continue;
+    if (parent.done) await apiPost({ action: 'taskToggle', id: res.id });
+    for (const child of (parent.children || [])) {
+      const cres = await apiPost({ action: 'taskAdd', text: child.text, owner: localData.userName, assignee: '', parentId: res.id, order: 0 });
+      if (cres.ok && child.done) await apiPost({ action: 'taskToggle', id: cres.id });
+    }
+  }
+  localData.tasksMigrated = true;
+  localData.personalTodos = []; // 이제 웹이 원본 — 로컬 백업은 비움(안 그러면 다음 실행 때 또 이관하려고 함)
+  persistLocalData();
 }
 
 // ===== 설정 =====
-const API_URL = 'https://script.google.com/macros/s/AKfycbybOFKkrFU7No0cJS1LG2rKVjXyTWcY5f2vYxEoEAPGWq6ckGBIPGACPcb0PrHP-Hb9yg/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyqj6Sgwq-eW9hKV0QsilqEE8xDPBOak3v0eDLEjfVHUyLIeJV7Uzgie6iadRNEf2UeBw/exec';
 const WIDGET_MAX_H = 700;
 // 달력 그리드는 항상 6주(42칸) 고정 렌더링이라(renderGrid 참고) 다이어리 모드 필요 높이는 달과
 // 무관하게 항상 동일 — 실측(CDP)으로 확인한 값에 여유를 살짝 더함. 모드 진입 시 한 번만 쓰고,
@@ -412,7 +547,10 @@ function resizeToContent() {
   // 진입/이탈 시점에만 setDiaryMode에서 직접 한 번 크기를 잡아주고, 그 뒤로는 손대지 않음
   if (diaryMode) return;
   const currentW = window.innerWidth;
-  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open')) {
+  // 모달/팝업은 #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 안 잡혀서(measureContentHeight가
+  // #app 기준이라 모달 내용은 아예 안 셈) 열려있는 동안은 무조건 이 고정 크기를 씀 — 안 그러면 위젯용
+  // 작은 창 위에 모달만 넘치게 됨. nameBackdrop(최초 이름 입력)도 같은 이유로 여기 포함시켜야 함
+  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open')) {
     window.api?.resize?.(currentW, MODAL_FIXED_H);
     return;
   }
@@ -459,11 +597,11 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-shared-tasks', tag: 'new', date: '7/28', text: 'My Notes가 팀 공유 태스크로 — 최초 실행 시 이름 등록, 특정 팀원에게 보내기, 톱니 메뉴에서 이름 변경 가능' },
   { id: 'u2026-diary-polish', tag: 'improved', date: '7/27', text: '다이어리 모드 개선 — My Notes 드래그로 순서 변경, 달력/My Notes 폭 조절 핸들, 창 높이에 맞춰 내용 꽉 차게' },
   { id: 'u2026-update-fix', tag: 'fix', date: '7/27', text: '업데이트/자동실행 안정화 — 확인 안 눌러도 자동 진행되던 버그, 시작프로그램 오류 화면 뜨던 문제 수정' },
   { id: 'u2026-diary-mode', tag: 'new', date: '7/24', text: '다이어리 모드 — 제목표시줄 아이콘으로 옆으로 넓어지는 보드 형태(달력+My Notes+일정) 전환' },
   { id: 'u2026-update-ux', tag: 'improved', date: '7/24', text: '업데이트 방식 단순화 — 실행할 때 한 번 확인, 있으면 물어보고 Yes 하면 알아서 재시작까지 자동' },
-  { id: 'u2026-team-activity', tag: 'new', date: '7/24', text: '팀 일정 추가·수정·삭제 알림 (내가 올린 것도 포함)' },
 ];
 // 빨간 점(배지)과 목록에서 지우는 건 서로 다른 상태임 —
 // 배지는 팝업을 한 번 열어서 "확인"만 하면 사라짐(읽음 처리), 목록의 개별 항목은 ×로
@@ -710,11 +848,20 @@ async function init() {
   loadViewMode();
   bindEvents(); // 네트워크 기다리지 않고 바로 상호작용 가능하게
 
-  // 로컬 전용 데이터(최근 업무, 개인 할일) — 네트워크 필요 없이 바로 로드
+  // 로컬 전용 데이터(최근 업무, 개인 일정) — 네트워크 필요 없이 바로 로드
   await loadLocalData();
-  renderPersonalTodos();
   renderUpdatesBadge();
   if (localData.icsUrl) syncPersonalIcs(); // 개인 ICS 연동해뒀으면 백그라운드로 바로 한 번 동기화
+
+  // My Notes(공유 태스크) — 최초 1회 이름 확인 → 예전 로컬 데이터 있으면 웹으로 이관 → 팀원
+  // 명단·태스크 목록 로드. 이 넷은 순서가 중요해서(이름 있어야 이관/등록 가능) await로 순차 실행
+  await ensureUserName();
+  await migrateLocalTasksIfNeeded();
+  fetchMembers();
+  fetchSharedTasks();
+  setInterval(() => {
+    if (document.visibilityState === 'visible') fetchSharedTasks();
+  }, 120000); // 2분 — 팀 일정 폴링과 같은 주기
 
   window.api?.getAutoLaunch?.().then(on => {
     $('#autoLaunchBtn')?.classList.toggle('active', !!on);
@@ -1721,13 +1868,17 @@ function bindEvents() {
     if (e.key === 'Enter') { e.preventDefault(); onSaveEvent(); }
   });
 
-  // 개인 할일(로컬 전용) — 입력 후 엔터로 추가
+  // My Notes(팀 공유 태스크) — 입력 후 엔터로 추가
   $('#todoInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       addPersonalTodo($('#todoInput').value);
       $('#todoInput').value = '';
     }
+  });
+  $('#todoAssignee')?.addEventListener('change', (e) => {
+    composeAssignee = e.target.value;
+    e.target.classList.toggle('active', !!composeAssignee); // 특정 사람 선택하면 진하게 표시
   });
 
   $('#fRepeat').addEventListener('change', (e) => {
@@ -1870,6 +2021,12 @@ function bindEvents() {
     resizeToContent();
   });
   $('#closeIcs').addEventListener('click', () => { $('#icsBackdrop').classList.remove('open'); resizeToContent(); });
+
+  // ── 내 이름 바꾸기 ──
+  $('#editUserNameBtn')?.addEventListener('click', () => {
+    closePopover();
+    editUserName();
+  });
   $('#icsBackdrop').addEventListener('click', (e) => {
     if (e.target.id === 'icsBackdrop') { $('#icsBackdrop').classList.remove('open'); resizeToContent(); }
   });
