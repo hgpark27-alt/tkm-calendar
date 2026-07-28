@@ -81,7 +81,9 @@ function createWindow() {
   win = new BrowserWindow({
     width: prefs.width || W,
     height: H_INITIAL,
-    minWidth: 200,
+    // 200이면 타이틀바 아이콘이 7개(새로고침/다이어리/설정/알림/고정/최소화/닫기)라 폭이 모자라서
+    // 닫기(×) 버튼 오른쪽이 잘렸음(실측으로 확인) — 다 들어가는 최소값으로 올림
+    minWidth: 220,
     minHeight: 100,
     x: prefs.pos?.x,
     y: prefs.pos?.y,

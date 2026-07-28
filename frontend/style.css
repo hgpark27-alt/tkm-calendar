@@ -476,7 +476,12 @@ body {
 }
 .todo-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.todo-list { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+/* 예전엔 220px로 고정 캡을 걸어서, 노트가 많으면 창을 아무리 늘려도 안 보이고 내부 스크롤 뒤로
+   숨어있기만 했음(창만 쓸데없이 커지고 내용은 그대로 안 보임) — 웬만하면 자르지 않고 창 자체가
+   늘어나 보여주는 쪽으로 바꿈(resizeToContent가 WIDGET_MAX_H까지는 실제 필요한 높이만큼 창을
+   키워줌). 그래도 안 되면(정말 노트가 너무 많아서 WIDGET_MAX_H를 넘으면) 그때만 페이지 자체가
+   스크롤됨(html,body — 스크롤바만 숨겨뒀을 뿐 스크롤 기능은 항상 살아있음) */
+.todo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .todo-item {
   display: flex; align-items: center; gap: 9px;
   padding: 5px 8px;
@@ -605,7 +610,7 @@ body {
   max-width: 420px;
   border-radius: 18px 18px 0 0;
   padding: 16px 18px 22px;
-  max-height: 86vh;
+  max-height: 90vh;
   overflow-y: auto;
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }

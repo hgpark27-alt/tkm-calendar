@@ -380,9 +380,13 @@ const WIDGET_MAX_H = 700;
 // 그 뒤론 폭처럼 사용자가 우하단 핸들로 직접 조절(resizeToContent가 diaryMode일 때 손 안 댐)
 const DIARY_FIXED_H = 670;
 // 모달은 내용(반복 필드 펼침 등)에 따라 매번 정확히 측정하려다가 계속 버그가 났음(줌 배율,
-// 타이밍 등) — 모달 자체가 이미 max-height:86vh + overflow-y:auto라 넘치면 알아서 스크롤되니,
-// 그냥 넉넉한 고정 크기로 열고 모달 안쪽에서 스크롤로 해결함 (측정 안 하니 애초에 틀릴 일이 없음)
-const MODAL_FIXED_H = 620;
+// 타이밍 등) — 모달 자체가 이미 max-height:90vh + overflow-y:auto라 넘치면 알아서 스크롤되니,
+// 그냥 넉넉한 고정 크기로 열고 모달 안쪽에서 스크롤로 해결함 (측정 안 하니 애초에 틀릴 일이 없음).
+// 620이었을 때는 90vh(이전엔 86vh)로도 가장 단순한 경우(반복 없음, 실측 675px 필요)조차 다
+// 못 보여줘서 항상 스크롤이 떴었음(실측으로 확인) — 그 경우는 스크롤 없이 다 보이게 올림. 반복
+// 필드까지 다 펼친 최악의 경우(실측 약 818px)는 이 값으로도 살짝 스크롤이 남는데, 그 이상 올리면
+// 화면이 작은 모니터(1366×768 등)에서 창이 화면 밖으로 넘어갈 수 있어 여기서 타협함
+const MODAL_FIXED_H = 780;
 
 // 항상 콘텐츠 크기만큼만 창을 차지하게 함(Electron 없으면 조용히 무시됨) — 모달/팝업은
 // #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 못 잡아서 열고닫을 때 직접 호출
@@ -1316,7 +1320,7 @@ const DIARY_EXTRA_W = 300; // .diary-col 너비만큼 창을 더 넓힘
 // 다이어리 모드는 내용이 창 크기에 맞춰 늘어나고 줄어들어서(그리드가 남는 공간을 다 채움),
 // 너무 작으면 칸이 못 알아보게 찌그러짐 — 그래서 이 모드에서만 최소 크기를 더 크게 잡음
 const DIARY_MIN_W = 520, DIARY_MIN_H = 480;
-const WIDGET_MIN_W = 200, WIDGET_MIN_H = 100; // main/index.js의 BrowserWindow 기본값과 일치
+const WIDGET_MIN_W = 220, WIDGET_MIN_H = 100; // main/index.js의 BrowserWindow 기본값과 일치
 // 달력/My Notes 칸 폭 조절 핸들의 최소값 — 이 이상 좁아지면 못 알아보므로 드래그가 여기서 멈춤
 const MIN_CAL_COL_W = 260, MIN_DIARY_COL_W = 220;
 
