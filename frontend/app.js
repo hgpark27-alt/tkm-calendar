@@ -837,6 +837,7 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-activity-dup-fix', tag: 'fix', date: '7/28', text: '일정 추가할 때 "추가됨"과 함께 의미없는 "삭제됨" 알림이 같이 뜨던 버그 수정' },
   { id: 'u2026-share-redesign', tag: 'improved', date: '7/28', text: 'My Notes 공유 방식 개선 — 항목마다 ↗ 버튼으로 대상 선택 후 "공유하기"로 확정(실수 방지), 받으면 알림 뜸. 추가할 때 지연 체감 없앰' },
   { id: 'u2026-shared-tasks', tag: 'new', date: '7/28', text: 'My Notes가 팀 공유 태스크로 — 최초 실행 시 이름 등록, 특정 팀원에게 보내기, 톱니 메뉴에서 이름 변경 가능' },
   { id: 'u2026-diary-polish', tag: 'improved', date: '7/27', text: '다이어리 모드 개선 — My Notes 드래그로 순서 변경, 달력/My Notes 폭 조절 핸들, 창 높이에 맞춰 내용 꽉 차게' },
@@ -1208,7 +1209,12 @@ async function loadMonth() {
 
   const cached = monthCache.get(key);
   if (cached) {
-    state.events = cached; // 캐시 있으면 네트워크 없이 즉시 표시
+    // 사본을 씀(참조를 그대로 넘기지 않음) — state.events는 낙관적 업데이트(추가/수정 시 서버
+    // 응답 기다리기 전에 push/수정)로 자주 그 자리에서 바로 mutate되는데, cached를 그대로 넘기면
+    // monthCache에 저장된 "진짜 예전 목록"까지 같이 오염돼서 diffAndLogActivity가 잘못된 비교를
+    // 하게 됨(임시 id 항목이 낀 "예전 목록"과 서버의 "새 목록"을 비교 → 그 임시 항목만 서버엔
+    // 없으니 "삭제됨"으로 오탐 — 일정 추가할 때마다 추가됨+삭제됨이 짝지어 뜨던 원인)
+    state.events = [...cached];
   } else if (state.loadedYear !== y || state.loadedMonth !== m) {
     state.events = []; // 처음 보는 달이라 어쩔 수 없이 비워서 표시(다른 달 점이 잘못 보이는 것 방지)
   }
@@ -1220,7 +1226,7 @@ async function loadMonth() {
   if (res.ok) {
     if (cached) diffAndLogActivity(cached, res.events); // 이미 본 적 있는 달일 때만 비교 — 처음 보는 달은 전부 "추가됨"으로 오폭되는 걸 방지
     monthCache.set(key, res.events);
-    state.events = res.events;
+    state.events = [...res.events]; // 위와 같은 이유로 사본 — monthCache에 저장된 배열과 별개로 둠
     renderAll();
   }
 
