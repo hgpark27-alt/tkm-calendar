@@ -70,7 +70,6 @@
             <div class="personal-todo-header">My Notes</div>
             <div class="todo-compose-row">
               <input type="text" id="todoInput" class="todo-input" placeholder="Add a task and press Enter...">
-              <select id="todoAssignee" class="todo-assignee-select" title="보낼 대상"></select>
             </div>
             <ul class="todo-list" id="todoList"></ul>
           </section>
@@ -86,6 +85,8 @@
   </div>
 
   <div class="hover-tip" id="hoverTip"></div>
+
+  <div class="toast-stack" id="toastStack"></div>
 
   <div class="popover-backdrop" id="popoverBackdrop"></div>
   <div class="popover" id="settingsPopover">
@@ -135,6 +136,17 @@
       <div class="modal-actions">
         <button class="btn-primary" id="saveUserName">시작하기</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 태스크 공유 대상 선택(노트 옆 ↗ 버튼으로 열림) -->
+  <div class="modal-backdrop" id="shareBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>공유할 사람 선택</h2>
+        <button class="close-btn" id="closeShareModal" aria-label="Close">×</button>
+      </div>
+      <ul class="share-list" id="shareList"></ul>
     </div>
   </div>
 

@@ -67,6 +67,7 @@ function doPost(e) {
     if (body.action === 'taskAdd')     return addTask(body);
     if (body.action === 'taskToggle')  return toggleTask(body);
     if (body.action === 'taskUpdate')  return updateTaskText(body);
+    if (body.action === 'taskAssign')  return assignTask(body);
     if (body.action === 'taskDelete')  return deleteTask(body.id);
     if (body.action === 'taskReorder') return reorderTask(body);
     if (body.action === 'memberRegister') return registerMember(body.name);
@@ -460,6 +461,18 @@ function updateTaskText(body) {
   const textColIdx = found.headers.indexOf('text') + 1;
   const updatedAtColIdx = found.headers.indexOf('updatedAt') + 1;
   sheet.getRange(found.rowIndex, textColIdx).setValue(body.text || '');
+  sheet.getRange(found.rowIndex, updatedAtColIdx).setValue(new Date().toISOString());
+  return {};
+}
+
+// body: { id, assignee } — 공유 대상 지정/변경. assignee가 빈 문자열이면 "전체"로 되돌림.
+function assignTask(body) {
+  const sheet = getTasksSheet_();
+  const found = findTaskRow_(sheet, body.id);
+  if (!found) throw new Error('태스크를 찾을 수 없음: ' + body.id);
+  const assigneeColIdx = found.headers.indexOf('assignee') + 1;
+  const updatedAtColIdx = found.headers.indexOf('updatedAt') + 1;
+  sheet.getRange(found.rowIndex, assigneeColIdx).setValue(body.assignee || '');
   sheet.getRange(found.rowIndex, updatedAtColIdx).setValue(new Date().toISOString());
   return {};
 }

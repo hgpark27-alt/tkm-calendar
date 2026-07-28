@@ -1,6 +1,6 @@
 // ===== 로컬 전용 데이터 (구글 캘린더로 절대 안 올라감 — 이 컴퓨터에만 저장) =====
 // Electron이면 main 프로세스가 파일로 원자적 저장(Tack 방식), 브라우저 테스트 중이면 localStorage로 대체
-let localData = { recentTasks: [], personalTodos: [], personalEvents: [], icsUrl: '', calendarActivity: [], userName: '', tasksMigrated: false };
+let localData = { recentTasks: [], personalTodos: [], personalEvents: [], icsUrl: '', calendarActivity: [], userName: '', tasksMigrated: false, seenTaskIds: [] };
 
 async function loadLocalData() {
   if (window.api?.getLocalData) {
@@ -15,6 +15,7 @@ async function loadLocalData() {
   localData.calendarActivity ??= []; // 팀 일정 추가/수정/삭제 알림 로그 (최대 20개)
   localData.userName ??= ''; // My Notes(공유 태스크) 작성자 표시용 — 최초 1회만 물어봄(ensureUserName)
   localData.tasksMigrated ??= false;
+  localData.seenTaskIds ??= []; // 이미 "받았다" 토스트를 보여준 태스크 id — 재알림 방지용(이 컴퓨터에만 저장)
 }
 
 // ===== 개인 ICS 캘린더 구독 (설정에서 각자 등록 — 이 컴퓨터에만 저장, 팀과 무관) =====
@@ -190,11 +191,15 @@ function renderRecentChips() {
 // 비어있으면 전체 공개, 채워져 있으면 그 사람 또는 만든 사람(owner) 눈에만 보임(visibleTaskTree).
 let sharedTasks = [];
 let members = [];
-let composeAssignee = ''; // 새 노트 작성 중 "보낼 대상" 선택값 — 비어있으면 전체
+let shareModalTaskId = null; // 지금 공유 대상 모달이 열려있는 태스크 id
 
+// sharedTasks의 실제 객체를 그대로(복사하지 않고) 씀 — 낙관적 추가(임시 id → 서버가 준 진짜 id로
+// 바꿔치기) 때 이미 그려진 행의 버튼 클릭 핸들러가 항상 "지금 이 순간의" id를 읽게 하려는 목적
+// (복사본을 쓰면 id가 나중에 바뀌어도 이미 그려진 행은 예전 id를 계속 들고 있게 됨)
 function visibleTaskTree() {
   const mine = sharedTasks.filter(t => !t.assignee || t.assignee === localData.userName || t.owner === localData.userName);
-  const byId = new Map(mine.map(t => [t.id, { ...t, children: [] }]));
+  const byId = new Map();
+  mine.forEach(t => { t.children = []; byId.set(t.id, t); });
   const roots = [];
   byId.forEach(t => {
     if (t.parentId && byId.has(t.parentId)) byId.get(t.parentId).children.push(t);
@@ -218,27 +223,108 @@ function renderPersonalTodos() {
   resizeToContent();
 }
 
+// 오프라인이거나 서버가 잠깐 안 되면 fetch 자체가 예외를 던질 수 있음 — 그냥 두면(await 안 하고
+// 호출하는 init()/폴링 쪽에서) 처리 안 된 프라미스 거부로 콘솔에 계속 경고가 남으니 여기서 삼킴.
+// 실패해도 sharedTasks/members는 이전 값 그대로 유지되고, 다음 폴링 때 다시 시도됨
 async function fetchSharedTasks() {
-  const res = await apiGet({ action: 'tasksList' });
-  if (res.ok) { sharedTasks = res.tasks; renderPersonalTodos(); }
+  try {
+    const res = await apiGet({ action: 'tasksList' });
+    if (res.ok) {
+      sharedTasks = res.tasks;
+      notifyNewlyReceivedTasks(); // 새로 나("assignee")한테 보내진 태스크가 있으면 토스트로 알림
+      renderPersonalTodos();
+    }
+  } catch (err) { console.error('[fetchSharedTasks] 실패(오프라인 등)', err); }
 }
 async function fetchMembers() {
-  const res = await apiGet({ action: 'membersList' });
-  if (res.ok) { members = res.members; renderMemberSelect(); }
+  try {
+    const res = await apiGet({ action: 'membersList' });
+    if (res.ok) { members = res.members; }
+  } catch (err) { console.error('[fetchMembers] 실패(오프라인 등)', err); }
 }
-function renderMemberSelect() {
-  const sel = $('#todoAssignee');
-  if (!sel) return;
-  sel.innerHTML = '';
-  const allOpt = document.createElement('option');
-  allOpt.value = ''; allOpt.textContent = '전체';
-  sel.appendChild(allOpt);
-  members.filter(name => name !== localData.userName).forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name; opt.textContent = name;
-    sel.appendChild(opt);
+
+// 남이 만들어서(owner !== 나) 나한테 특정해서 보낸(assignee === 나) 태스크 중, 아직 토스트로
+// 안 보여준 것만 알림 — seenTaskIds(로컬 저장)에 한 번 넣으면 다음 폴링부턴 다시 안 뜸
+function notifyNewlyReceivedTasks() {
+  const fresh = sharedTasks.filter(t =>
+    t.assignee === localData.userName &&
+    t.owner !== localData.userName &&
+    !localData.seenTaskIds.includes(t.id)
+  );
+  if (!fresh.length) return;
+  fresh.forEach(t => {
+    localData.seenTaskIds.push(t.id);
+    showTaskToast(t);
   });
-  sel.value = composeAssignee;
+  persistLocalData();
+}
+
+function showTaskToast(task) {
+  const stack = $('#toastStack');
+  if (!stack) return;
+  const el = document.createElement('div');
+  el.className = 'toast';
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = `${task.owner}님으로부터 태스크를 받았습니다: "${task.text}" 추가하시겠습니까?`;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.textContent = '확인';
+  close.addEventListener('click', () => el.remove());
+  el.appendChild(text);
+  el.appendChild(close);
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 8000); // 안 눌러도 8초 뒤 자동으로 사라짐
+}
+
+// ===== 태스크 공유 대상 선택 모달 =====
+function openShareModal(taskId) {
+  shareModalTaskId = taskId;
+  renderShareList();
+  $('#shareBackdrop').classList.add('open');
+  resizeToContent();
+}
+function closeShareModal() {
+  shareModalTaskId = null;
+  $('#shareBackdrop').classList.remove('open');
+  resizeToContent();
+}
+function renderShareList() {
+  const list = $('#shareList');
+  list.innerHTML = '';
+  const { todo } = findTodoAndParent(shareModalTaskId);
+  const currentAssignee = todo ? (todo.assignee || '') : '';
+
+  const makeItem = (value, label, isAll) => {
+    const li = document.createElement('li');
+    li.className = 'share-item' + (isAll ? ' share-all' : '') + (value === currentAssignee ? ' selected' : '');
+    const span = document.createElement('span');
+    span.textContent = label;
+    li.appendChild(span);
+    if (value === currentAssignee) {
+      const check = document.createElement('span');
+      check.className = 'check';
+      check.textContent = '✓';
+      li.appendChild(check);
+    }
+    li.addEventListener('click', () => assignShareTarget(value));
+    return li;
+  };
+
+  list.appendChild(makeItem('', '전체', true));
+  members.filter(name => name !== localData.userName).forEach(name => {
+    list.appendChild(makeItem(name, name, false));
+  });
+}
+function assignShareTarget(assignee) {
+  const taskId = shareModalTaskId;
+  const { todo } = findTodoAndParent(taskId);
+  if (!todo) { closeShareModal(); return; }
+  todo.assignee = assignee; // 낙관적 반영
+  renderPersonalTodos();
+  closeShareModal();
+  apiPost({ action: 'taskAssign', id: taskId, assignee });
 }
 
 function findTodoAndParent(id) {
@@ -355,6 +441,14 @@ function buildTodoRow(todo, parentId) {
     li.appendChild(addChild);
   }
 
+  const share = document.createElement('button');
+  share.type = 'button';
+  share.className = 'todo-share' + (todo.assignee ? ' active' : '');
+  share.title = todo.assignee ? `${todo.assignee}님에게 공유됨` : '공유하기';
+  share.textContent = '↗';
+  share.addEventListener('click', () => openShareModal(todo.id));
+  li.appendChild(share);
+
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'todo-del';
@@ -384,16 +478,39 @@ function startEditTodo(id) {
     if (done) return;
     done = true;
     const v = input.value.trim();
-    if (!v) { deleteTodo(id); return; } // 비워두고 저장하면 그냥 삭제 취급
+    if (!v) { deleteTodo(todo.id); return; } // 비워두고 저장하면 그냥 삭제 취급
     todo.text = v; // 낙관적 반영 — 서버 응답 기다리지 않고 바로 화면에 보여줌
     renderPersonalTodos();
-    await apiPost({ action: 'taskUpdate', id, text: v });
+    // id가 아닌 todo.id를 씀 — 방금 낙관적으로 추가된 항목이라면 타이핑하는 사이 임시 id가
+    // 서버의 진짜 id로 바꿔치기됐을 수 있어서, 항상 "지금" 값을 읽어야 함
+    await apiPost({ action: 'taskUpdate', id: todo.id, text: v });
   };
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); commit(); }
     else if (e.key === 'Escape') { done = true; renderPersonalTodos(); }
   });
   input.addEventListener('blur', commit);
+}
+
+// Apps Script 왕복(느리면 1~2초)을 기다렸다가 화면에 보여주면 입력할 때마다 눈에 띄게
+// 버벅여 보임 — 그래서 taskAdd도 다른 동작들처럼 낙관적으로 처리함: 임시 id로 즉시 화면에
+// 보여준 뒤, 서버 응답이 오면 그 임시 id를 서버가 준 진짜 id로 조용히 바꿔치기(리렌더 없이
+// dataset.id만 갱신 — 리렌더를 하면 addChildTodo가 바로 이어서 여는 편집 입력창이 도중에
+// 날아가버림). 실패하면 임시로 보여줬던 항목을 다시 지움.
+function makeTempTaskId() {
+  return 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+}
+function patchTaskId(task, realId) {
+  const tempId = task.id;
+  task.id = realId;
+  const row = $(`#todoList li[data-id="${tempId}"]`);
+  if (row) row.dataset.id = realId;
+  // 이 임시 id를 parentId로 물고 있던 자식(방금 부모가 생기자마자 바로 하위 항목을 추가한 경우)도 같이 맞춤
+  sharedTasks.forEach(c => { if (c.parentId === tempId) c.parentId = realId; });
+}
+function rollbackTempTask(tempId) {
+  sharedTasks = sharedTasks.filter(x => x.id !== tempId && x.parentId !== tempId);
+  renderPersonalTodos();
 }
 
 // 새 최상위 노트를 추가할 때 정렬 순서를 기존 것보다 앞(더 작은 order)에 둬서 위로 올라오게 함
@@ -403,12 +520,14 @@ function addPersonalTodo(text) {
   if (!t) return;
   const topLevel = sharedTasks.filter(x => !x.parentId);
   const newOrder = topLevel.length ? Math.min(...topLevel.map(x => Number(x.order) || 0)) - 1 : 0;
-  const owner = localData.userName, assignee = composeAssignee;
-  apiPost({ action: 'taskAdd', text: t, owner, assignee, parentId: '', order: newOrder }).then(res => {
-    if (!res.ok) return;
-    sharedTasks.push({ id: res.id, text: t, done: false, parentId: '', order: newOrder, owner, assignee, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-    renderPersonalTodos();
-  });
+  const owner = localData.userName, assignee = ''; // 새로 만들 땐 항상 전체 공개 — 공유 대상은 만든 뒤 ↗ 버튼으로 지정
+  const task = { id: makeTempTaskId(), text: t, done: false, parentId: '', order: newOrder, owner, assignee, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  sharedTasks.push(task);
+  renderPersonalTodos();
+  const tempId = task.id;
+  apiPost({ action: 'taskAdd', text: t, owner, assignee, parentId: '', order: newOrder })
+    .then(res => { if (res.ok) patchTaskId(task, res.id); else rollbackTempTask(tempId); })
+    .catch(err => { console.error('[addPersonalTodo] 저장 실패(오프라인 등)', err); rollbackTempTask(tempId); });
 }
 function addChildTodo(parentId) {
   const parent = sharedTasks.find(t => t.id === parentId);
@@ -416,12 +535,14 @@ function addChildTodo(parentId) {
   const siblings = sharedTasks.filter(t => t.parentId === parentId);
   const newOrder = siblings.length ? Math.max(...siblings.map(t => Number(t.order) || 0)) + 1 : 0;
   const owner = localData.userName, assignee = parent.assignee || ''; // 하위 항목은 상위 항목의 "보낸 대상"을 그대로 물려받음
-  apiPost({ action: 'taskAdd', text: '', owner, assignee, parentId, order: newOrder }).then(res => {
-    if (!res.ok) return;
-    sharedTasks.push({ id: res.id, text: '', done: false, parentId, order: newOrder, owner, assignee, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-    renderPersonalTodos();
-    startEditTodo(res.id); // 추가하자마자 바로 입력할 수 있게
-  });
+  const task = { id: makeTempTaskId(), text: '', done: false, parentId, order: newOrder, owner, assignee, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  sharedTasks.push(task);
+  renderPersonalTodos();
+  startEditTodo(task.id); // 추가하자마자 바로 입력할 수 있게(응답 기다리지 않음)
+  const tempId = task.id;
+  apiPost({ action: 'taskAdd', text: '', owner, assignee, parentId, order: newOrder })
+    .then(res => { if (res.ok) patchTaskId(task, res.id); else rollbackTempTask(tempId); })
+    .catch(err => { console.error('[addChildTodo] 저장 실패(오프라인 등)', err); rollbackTempTask(tempId); });
 }
 function toggleTodo(id) {
   const { todo } = findTodoAndParent(id);
@@ -467,10 +588,17 @@ function openNamePrompt(cancelable) {
       cleanup();
       localData.userName = v;
       persistLocalData();
+      // 네트워크가 끊겨있으면 memberRegister가 예외를 던질 수 있는데, 그걸 그냥 두면 resolve()가
+      // 영원히 안 불려서 앱 시작 자체가 멈춰버림 — 오프라인이어도 이름은 이미 저장했으니 일단
+      // 진행시키고, 명단 등록/새로고침은 되면 하고 안 되면 다음 폴링 때 다시 시도되게 둠
       if (changed) {
-        await apiPost({ action: 'memberRegister', name: v });
-        await fetchMembers();
-        renderPersonalTodos(); // 이름이 바뀌면 owner 기준 필터링 결과도 바뀔 수 있어서 다시 그림
+        try {
+          await apiPost({ action: 'memberRegister', name: v });
+          await fetchMembers();
+          renderPersonalTodos(); // 이름이 바뀌면 owner 기준 필터링 결과도 바뀔 수 있어서 다시 그림
+        } catch (err) {
+          console.error('[memberRegister] 실패(오프라인 등) — 이름은 저장됐고, 명단 등록은 나중에 다시 시도됨', err);
+        }
       }
       resolve();
     };
@@ -493,18 +621,31 @@ function editUserName() {
 async function migrateLocalTasksIfNeeded() {
   if (localData.tasksMigrated) return;
   const old = localData.personalTodos || [];
-  for (const parent of old) {
-    const res = await apiPost({ action: 'taskAdd', text: parent.text, owner: localData.userName, assignee: '', parentId: '', order: 0 });
-    if (!res.ok) continue;
-    if (parent.done) await apiPost({ action: 'taskToggle', id: res.id });
-    for (const child of (parent.children || [])) {
-      const cres = await apiPost({ action: 'taskAdd', text: child.text, owner: localData.userName, assignee: '', parentId: res.id, order: 0 });
-      if (cres.ok && child.done) await apiPost({ action: 'taskToggle', id: cres.id });
-    }
+  if (!old.length) { // 옮길 게 없으면 바로 완료 처리(다음부턴 빈 배열 확인하러 매번 안 돌게)
+    localData.tasksMigrated = true;
+    persistLocalData();
+    return;
   }
-  localData.tasksMigrated = true;
-  localData.personalTodos = []; // 이제 웹이 원본 — 로컬 백업은 비움(안 그러면 다음 실행 때 또 이관하려고 함)
-  persistLocalData();
+  try {
+    for (const parent of old) {
+      const res = await apiPost({ action: 'taskAdd', text: parent.text, owner: localData.userName, assignee: '', parentId: '', order: 0 });
+      if (!res.ok) throw new Error('taskAdd 실패: ' + (res.error || '알 수 없는 오류'));
+      if (parent.done) await apiPost({ action: 'taskToggle', id: res.id });
+      for (const child of (parent.children || [])) {
+        const cres = await apiPost({ action: 'taskAdd', text: child.text, owner: localData.userName, assignee: '', parentId: res.id, order: 0 });
+        if (!cres.ok) throw new Error('taskAdd(자식) 실패: ' + (cres.error || '알 수 없는 오류'));
+        if (child.done) await apiPost({ action: 'taskToggle', id: cres.id });
+      }
+    }
+    // 전부 성공했을 때만 로컬 백업을 지움 — 오프라인이거나 서버 오류로 중간에 하나라도 실패하면
+    // 여기 도달 못 하고 personalTodos가 그대로 남아서, 다음 실행 때 이관을 처음부터 다시 시도함
+    // (이미 성공해서 올라간 것까지 같이 다시 올라가 중복될 순 있지만, 노트가 사라지는 것보단 나음)
+    localData.tasksMigrated = true;
+    localData.personalTodos = [];
+    persistLocalData();
+  } catch (err) {
+    console.error('[migrate] 로컬 My Notes를 웹으로 옮기는 중 실패(오프라인 등) — 다음 실행 때 다시 시도됨', err);
+  }
 }
 
 // ===== 설정 =====
@@ -550,7 +691,7 @@ function resizeToContent() {
   // 모달/팝업은 #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 안 잡혀서(measureContentHeight가
   // #app 기준이라 모달 내용은 아예 안 셈) 열려있는 동안은 무조건 이 고정 크기를 씀 — 안 그러면 위젯용
   // 작은 창 위에 모달만 넘치게 됨. nameBackdrop(최초 이름 입력)도 같은 이유로 여기 포함시켜야 함
-  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open')) {
+  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open') || $('#shareBackdrop')?.classList.contains('open')) {
     window.api?.resize?.(currentW, MODAL_FIXED_H);
     return;
   }
@@ -1876,10 +2017,8 @@ function bindEvents() {
       $('#todoInput').value = '';
     }
   });
-  $('#todoAssignee')?.addEventListener('change', (e) => {
-    composeAssignee = e.target.value;
-    e.target.classList.toggle('active', !!composeAssignee); // 특정 사람 선택하면 진하게 표시
-  });
+  $('#closeShareModal').addEventListener('click', closeShareModal);
+  $('#shareBackdrop').addEventListener('click', (e) => { if (e.target.id === 'shareBackdrop') closeShareModal(); });
 
   $('#fRepeat').addEventListener('change', (e) => {
     const v = e.target.value;

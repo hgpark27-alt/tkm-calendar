@@ -475,18 +475,6 @@ body {
   color: var(--text);
 }
 .todo-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-/* "보낼 대상" — 기본(전체)일 땐 수수하게, 특정 사람을 고르면 진하게(강조색) 표시해서
-   "이거 특정인한테 보내는 거다"가 눈에 바로 띄게 함 */
-.todo-assignee-select {
-  flex-shrink: 0; max-width: 80px;
-  font: inherit; font-size: 12px;
-  padding: 0 6px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
-  color: var(--text-soft);
-}
-.todo-assignee-select.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; border-color: var(--accent); }
 
 /* 예전엔 220px로 고정 캡을 걸어서, 노트가 많으면 창을 아무리 늘려도 안 보이고 내부 스크롤 뒤로
    숨어있기만 했음(창만 쓸데없이 커지고 내용은 그대로 안 보임) — 웬만하면 자르지 않고 창 자체가
@@ -530,6 +518,57 @@ body {
   display: flex; align-items: center; justify-content: center;
 }
 .todo-add-child:hover { color: var(--accent); border-color: var(--accent); }
+
+/* 공유 대상 지정 버튼 — 특정 사람에게 보낸 상태면 강조색으로 표시 */
+.todo-share {
+  background: none; border: none;
+  color: var(--text-soft); font-size: 13px; line-height: 1;
+  cursor: pointer; padding: 0 3px; flex-shrink: 0;
+}
+.todo-share:hover { color: var(--accent); }
+.todo-share.active { color: var(--accent); font-weight: 700; }
+
+/* 공유 대상 선택 모달 안 목록 */
+.share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.share-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.share-item:hover { border-color: var(--accent); }
+.share-item.selected { background: var(--accent-soft); color: var(--accent); font-weight: 700; border-color: var(--accent); }
+.share-item.share-all { font-weight: 700; margin-bottom: 4px; }
+.share-item .check { color: var(--accent); font-weight: 700; }
+
+/* 태스크 수신 알림 토스트 */
+.toast-stack {
+  position: fixed; left: 0; right: 0; bottom: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  z-index: 50; pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  max-width: 90%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.toast .toast-text { flex: 1; min-width: 0; }
+.toast .toast-close {
+  background: none; border: none; color: var(--text-soft);
+  font-size: 15px; cursor: pointer; flex-shrink: 0; padding: 0 2px;
+}
+.toast .toast-close:hover { color: var(--text); }
 
 /* 할 일 텍스트 클릭하면 나오는 인라인 수정 입력창 */
 .todo-edit-input {
