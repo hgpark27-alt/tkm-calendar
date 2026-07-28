@@ -193,11 +193,15 @@ let sharedTasks = [];
 let members = [];
 let shareModalTaskId = null; // 지금 공유 대상 모달이 열려있는 태스크 id
 
-// sharedTasks의 실제 객체를 그대로(복사하지 않고) 씀 — 낙관적 추가(임시 id → 서버가 준 진짜 id로
-// 바꿔치기) 때 이미 그려진 행의 버튼 클릭 핸들러가 항상 "지금 이 순간의" id를 읽게 하려는 목적
-// (복사본을 쓰면 id가 나중에 바뀌어도 이미 그려진 행은 예전 id를 계속 들고 있게 됨)
+// assignee가 비어있으면(기본값) "전체 공개"로 취급했던 게 버그였음 — 그래서 아무 설정도 안 하고
+// 그냥 노트만 적으면 팀원 전체한테 다 보여버렸고(각자 개인 메모였던 것들이 전부 공개됨),
+// 예전 로컬 전용 My Notes를 이관할 때도 같은 이유로 전체공개가 돼버려서 사고가 남(다른 사람
+// 화면에 내 개인 메모가 잔뜩 섞여 보이는 문제 — 실제 데이터가 지워진 건 아니고 순전히 노출 범위
+// 버그). 이제 비어있으면 "나만 보임"(owner 조건으로 이미 커버됨)이 기본이고, "전체 공개"는
+// SHARE_ALL이라는 별도 값을 명시적으로 골라야만(공유 모달의 "전체") 켜지게 바꿈.
+const SHARE_ALL = '__ALL__';
 function visibleTaskTree() {
-  const mine = sharedTasks.filter(t => !t.assignee || t.assignee === localData.userName || t.owner === localData.userName);
+  const mine = sharedTasks.filter(t => t.assignee === SHARE_ALL || t.assignee === localData.userName || t.owner === localData.userName);
   const byId = new Map();
   mine.forEach(t => { t.children = []; byId.set(t.id, t); });
   const roots = [];
@@ -302,7 +306,10 @@ function renderShareList() {
   list.innerHTML = '';
   const { todo } = findTodoAndParent(shareModalTaskId);
   const currentAssignee = todo ? (todo.assignee || '') : '';
-  $('#shareCurrentHint').textContent = currentAssignee ? `현재 "${currentAssignee}"님에게 공유됨` : '현재 전체 공개';
+  $('#shareCurrentHint').textContent =
+    currentAssignee === SHARE_ALL ? '현재 전체 공개'
+    : currentAssignee ? `현재 "${currentAssignee}"님에게 공유됨`
+    : '현재 나만 보임(비공개)';
 
   const makeItem = (value, label, isAll) => {
     const li = document.createElement('li');
@@ -324,7 +331,8 @@ function renderShareList() {
     return li;
   };
 
-  list.appendChild(makeItem('', '전체', true));
+  list.appendChild(makeItem('', '나만 보기(비공개)', true));
+  list.appendChild(makeItem(SHARE_ALL, '전체', true));
   members.filter(name => name !== localData.userName).forEach(name => {
     list.appendChild(makeItem(name, name, false));
   });
@@ -529,6 +537,16 @@ function buildTodoRow(todo, parentId) {
   text.addEventListener('click', () => { if (!suppressNoteClick) startEditTodo(todo.id); });
   li.appendChild(text);
 
+  // 내가 만든 게 아닌(공유받았거나 전체공개로 보이는) 노트는 누가 쓴 건지 표시 — 안 그러면
+  // 여러 사람 노트가 한 목록에 섞여 보일 때 누구 건지 구분이 안 돼서 "내용이 뒤섞였다"고
+  // 오해하기 쉬움(실제로는 각자 자기 이름으로 서버에 잘 저장돼 있는데 화면에 구분 표시가 없었음)
+  if (todo.owner && todo.owner !== localData.userName) {
+    const ownerTag = document.createElement('span');
+    ownerTag.className = 'todo-owner-tag';
+    ownerTag.textContent = todo.owner;
+    li.appendChild(ownerTag);
+  }
+
   if (!isChild) {
     const addChild = document.createElement('button');
     addChild.type = 'button';
@@ -539,20 +557,37 @@ function buildTodoRow(todo, parentId) {
     li.appendChild(addChild);
   }
 
-  const share = document.createElement('button');
-  share.type = 'button';
-  share.className = 'todo-share' + (todo.assignee ? ' active' : '');
-  share.title = todo.assignee ? `${todo.assignee}님에게 공유됨` : '공유하기';
-  share.textContent = '↗';
-  share.addEventListener('click', () => openShareModal(todo.id));
-  li.appendChild(share);
+  const isOwner = !todo.owner || todo.owner === localData.userName; // 예전 마이그레이션 등으로 owner가 비어있으면 그냥 내 것 취급
+  // 공유 대상을 정하는 건 원래 만든 사람만 — 안 그러면 받은 사람이 남의 노트를 마음대로
+  // 다른 사람한테 재전송하는 것도 가능해져버림
+  if (isOwner) {
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'todo-share' + (todo.assignee ? ' active' : '');
+    share.title = todo.assignee === SHARE_ALL ? '전체에게 공유됨' : todo.assignee ? `${todo.assignee}님에게 공유됨` : '공유하기(나만 보임)';
+    share.textContent = '↗';
+    share.addEventListener('click', () => openShareModal(todo.id));
+    li.appendChild(share);
+  }
 
-  const del = document.createElement('button');
-  del.type = 'button';
-  del.className = 'todo-del';
-  del.textContent = '×';
-  del.addEventListener('click', () => deleteTodo(todo.id));
-  li.appendChild(del);
+  // 시트에는 노트당 딱 한 줄만 있음(복사본이 아니라 참조 공유) — 그래서 삭제 버튼 동작이
+  // 누가 눌렀느냐에 따라 달라야 함:
+  //  - 만든 사람이 지우면: 진짜 삭제(원본 자체를 지움, 다른 사람 화면에서도 사라짐 — 의도된 동작)
+  //  - "나한테만" 공유받은 사람이 지우면: 원본은 안 건드리고 공유만 취소(assignee를 비워서
+  //    내 화면에서만 사라지게 함, owner는 계속 봄) — "받은사람이 지우면 그사람 것만 사라진다"는
+  //    요구사항을 원본 하나로도 만족시키는 가장 단순한 방법
+  //  - "전체공개"로 보이는 걸 owner가 아닌 사람이 보는 경우: 나만 숨기는 기능이 아직 없어서
+  //    (그러려면 사람마다 "숨김 목록"을 따로 저장해야 함) 실수로 원본이 삭제되는 걸 막는 게
+  //    우선이라, 이 경우는 삭제 버튼 자체를 안 보여줌
+  if (isOwner || todo.assignee === localData.userName) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'todo-del';
+    del.title = isOwner ? '삭제' : '공유 취소(내 화면에서만 안 보이게)';
+    del.textContent = '×';
+    del.addEventListener('click', () => deleteTodo(todo.id));
+    li.appendChild(del);
+  }
 
   return li;
 }
@@ -650,9 +685,18 @@ function toggleTodo(id) {
   apiPost({ action: 'taskToggle', id });
 }
 function deleteTodo(id) {
-  sharedTasks = sharedTasks.filter(t => t.id !== id && t.parentId !== id); // 부모면 자식(1단계)도 같이 정리
+  const { todo } = findTodoAndParent(id);
+  const isOwner = !todo || !todo.owner || todo.owner === localData.userName;
+  sharedTasks = sharedTasks.filter(t => t.id !== id && t.parentId !== id); // 내 화면에서는 부모면 자식(1단계)도 같이 정리
   renderPersonalTodos();
-  apiPost({ action: 'taskDelete', id });
+  if (isOwner) {
+    apiPost({ action: 'taskDelete', id }); // 원본 삭제 — 다른 사람 화면에서도 사라짐
+  } else {
+    // 내가 만든 게 아님 — 원본은 그대로 두고 "나에게 공유된 것"만 취소함(assignee를 비움).
+    // owner는 그대로 자기 노트로 계속 봄, 나만 내 목록에서 사라짐(복사본이 아니라 참조 공유라
+    // 원본을 건드리지 않고 "내 화면에서만 안 보이게" 하려면 이 방법뿐)
+    apiPost({ action: 'taskAssign', id, assignee: '' });
+  }
 }
 
 // 최초 실행 시 이름 하나만 물어봄(비밀번호 없음, 취소 불가) — 이후엔 이 컴퓨터에 저장된 이름을
@@ -837,6 +881,7 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-privacy-fix', tag: 'fix', date: '7/28', text: '(중요) My Notes 공개범위 버그 수정 — 아무것도 안 정해도 전체공개였던 걸 "나만 보임"으로 기본값 변경, 공유 안 한 노트가 남에게 보이던 문제 해결. 남의 노트엔 작성자 이름표 표시. 공유 대상 지정/삭제는 만든 사람만, 받은 사람이 지우면 내 화면에서만 사라지고 원본은 안 지워짐' },
   { id: 'u2026-activity-dup-fix', tag: 'fix', date: '7/28', text: '일정 추가할 때 "추가됨"과 함께 의미없는 "삭제됨" 알림이 같이 뜨던 버그 수정' },
   { id: 'u2026-share-redesign', tag: 'improved', date: '7/28', text: 'My Notes 공유 방식 개선 — 항목마다 ↗ 버튼으로 대상 선택 후 "공유하기"로 확정(실수 방지), 받으면 알림 뜸. 추가할 때 지연 체감 없앰' },
   { id: 'u2026-shared-tasks', tag: 'new', date: '7/28', text: 'My Notes가 팀 공유 태스크로 — 최초 실행 시 이름 등록, 특정 팀원에게 보내기, 톱니 메뉴에서 이름 변경 가능' },
