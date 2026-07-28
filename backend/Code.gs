@@ -518,16 +518,50 @@ function assignTask(body) {
   return {};
 }
 
+// ===== 완료 후 삭제된 태스크 아카이빙 =====
+// 규칙(사용자 지정): 완료 표시(done=true) 상태에서 지워지면 이 시트로 옮겨서 기록으로 남김.
+// 완료 표시 없이 그냥 지워지면 아카이빙 없이 그대로 사라짐. 텍스트뿐이라 용량 걱정 없음 —
+// 2차 가공(분석/정리)은 필요할 때 이 시트를 직접 열어서 하면 됨(여기선 그냥 쌓아두기만 함)
+const ARCHIVE_SHEET_NAME = 'ArchivedTasks';
+const ARCHIVE_HEADERS = TASKS_HEADERS.concat(['archivedAt']);
+
+function getArchiveSheet_() {
+  const ss = SpreadsheetApp.openById(TASKS_SHEET_ID);
+  let sheet = ss.getSheetByName(ARCHIVE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(ARCHIVE_SHEET_NAME);
+    sheet.appendRow(ARCHIVE_HEADERS);
+    return sheet;
+  }
+  const currentHeaders = sheet.getRange(1, 1, 1, ARCHIVE_HEADERS.length).getValues()[0];
+  const matches = ARCHIVE_HEADERS.every((h, i) => currentHeaders[i] === h);
+  if (!matches) sheet.getRange(1, 1, 1, ARCHIVE_HEADERS.length).setValues([ARCHIVE_HEADERS]);
+  return sheet;
+}
+
+function archiveIfDone_(headers, row) {
+  const doneColIdx = headers.indexOf('done');
+  const isDone = row[doneColIdx] === true || row[doneColIdx] === 'TRUE';
+  if (!isDone) return;
+  const values = headers.map((h, i) => row[i]);
+  getArchiveSheet_().appendRow(values.concat([new Date().toISOString()]));
+}
+
 function deleteTask(id) {
   const sheet = getTasksSheet_();
   const found = findTaskRow_(sheet, id);
   if (!found) return {}; // 이미 없으면 성공 취급(멱등 — 여러 명이 거의 동시에 지워도 에러 안 남)
+  archiveIfDone_(found.headers, found.row);
   sheet.deleteRow(found.rowIndex);
-  // 부모였다면 자식들도 같이 정리(1단계 트리라 자식의 자식은 없어서 한 번만 훑으면 됨)
+  // 부모였다면 자식들도 같이 정리(1단계 트리라 자식의 자식은 없어서 한 번만 훑으면 됨) — 자식도
+  // 각자 완료 여부에 따라 개별적으로 아카이빙됨(부모가 완료였어도 자식이 미완료면 자식은 그냥 사라짐)
   const parentColIdx = found.headers.indexOf('parentId');
   const values = sheet.getDataRange().getValues();
   for (let i = values.length - 1; i >= 1; i--) {
-    if (values[i][parentColIdx] === id) sheet.deleteRow(i + 1);
+    if (values[i][parentColIdx] === id) {
+      archiveIfDone_(found.headers, values[i]);
+      sheet.deleteRow(i + 1);
+    }
   }
   return {};
 }
