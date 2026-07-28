@@ -71,6 +71,8 @@ function doPost(e) {
     if (body.action === 'taskDelete')  return deleteTask(body.id);
     if (body.action === 'taskReorder') return reorderTask(body);
     if (body.action === 'memberRegister') return registerMember(body.name);
+    if (body.action === 'memberRename') return renameMember(body);
+    if (body.action === 'memberDelete') return deleteMember(body);
     throw new Error('알 수 없는 action: ' + body.action);
   });
 }
@@ -375,6 +377,45 @@ function registerMember(name) {
   }
   sheet.appendRow([name, now, now]);
   return { registered: true };
+}
+
+// body: { oldName, newName } — 회원 관리(관리자 전용) 이름 변경. 이 사람이 이미 만들었거나
+// 받은 태스크의 owner/assignee도 같이 바꿔줘야 옛 태스크가 고아(예전 이름을 가리킴)가 안 됨.
+function renameMember(body) {
+  const oldName = body.oldName, newName = (body.newName || '').trim();
+  if (!oldName || !newName) throw new Error('이름이 비어있음');
+  const sheet = getMembersSheet_();
+  const values = sheet.getDataRange().getValues();
+  let found = false;
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === oldName) {
+      sheet.getRange(i + 1, 1).setValue(newName);
+      found = true;
+      break;
+    }
+  }
+  if (!found) throw new Error('회원을 찾을 수 없음: ' + oldName);
+
+  const taskSheet = getTasksSheet_();
+  const tv = taskSheet.getDataRange().getValues();
+  const headers = tv[0];
+  const ownerColIdx = headers.indexOf('owner') + 1;
+  const assigneeColIdx = headers.indexOf('assignee') + 1;
+  for (let i = 1; i < tv.length; i++) {
+    if (tv[i][ownerColIdx - 1] === oldName) taskSheet.getRange(i + 1, ownerColIdx).setValue(newName);
+    if (tv[i][assigneeColIdx - 1] === oldName) taskSheet.getRange(i + 1, assigneeColIdx).setValue(newName);
+  }
+  return {};
+}
+
+// body: { name } — 명단에서만 제거. 이미 남긴 태스크는 기록으로 그대로 둠(굳이 안 지움)
+function deleteMember(body) {
+  const sheet = getMembersSheet_();
+  const values = sheet.getDataRange().getValues();
+  for (let i = 1; i < values.length; i++) {
+    if (values[i][0] === body.name) { sheet.deleteRow(i + 1); return {}; }
+  }
+  return {}; // 이미 없으면 성공 취급(멱등)
 }
 
 function getTasksSheet_() {

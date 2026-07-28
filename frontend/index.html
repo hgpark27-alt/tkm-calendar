@@ -108,6 +108,8 @@
     <button class="popover-item" id="openIcsSettings">Personal Calendar (ICS)</button>
     <div class="popover-divider"></div>
     <button class="popover-item" id="editUserNameBtn">내 이름 바꾸기</button>
+    <!-- 관리자(박혜근)에게만 노출 — init()에서 hidden 해제 -->
+    <button class="popover-item" id="manageMembersBtn" hidden>회원 관리</button>
   </div>
 
   <!-- 최근 업데이트 소식 (종 아이콘) -->
@@ -139,14 +141,30 @@
     </div>
   </div>
 
-  <!-- 태스크 공유 대상 선택(노트 옆 ↗ 버튼으로 열림) -->
+  <!-- 회원 관리(관리자 전용 — 이름 변경/삭제) -->
+  <div class="modal-backdrop" id="membersBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>회원 관리</h2>
+        <button class="close-btn" id="closeMembersModal" aria-label="Close">×</button>
+      </div>
+      <ul class="member-mgmt-list" id="memberMgmtList"></ul>
+    </div>
+  </div>
+
+  <!-- 태스크 공유 대상 선택(노트 옆 ↗ 버튼으로 열림) — 목록에서 고르기만 해선 안 바뀌고,
+       "공유하기"를 눌러야 확정됨(기본 선택값도 없어서 잘못 눌러 전체공유되는 실수를 막음) -->
   <div class="modal-backdrop" id="shareBackdrop">
     <div class="modal">
       <div class="modal-header">
         <h2>공유할 사람 선택</h2>
         <button class="close-btn" id="closeShareModal" aria-label="Close">×</button>
       </div>
+      <p class="hint info" id="shareCurrentHint" style="margin: 0 0 10px;"></p>
       <ul class="share-list" id="shareList"></ul>
+      <div class="modal-actions">
+        <button class="btn-primary" id="confirmShareBtn" disabled>공유하기</button>
+      </div>
     </div>
   </div>
 

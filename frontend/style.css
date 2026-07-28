@@ -528,6 +528,30 @@ body {
 .todo-share:hover { color: var(--accent); }
 .todo-share.active { color: var(--accent); font-weight: 700; }
 
+/* 회원 관리 모달 안 목록(관리자 전용) */
+.member-mgmt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.member-mgmt-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.member-mgmt-name { flex: 1; min-width: 0; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-mgmt-edit-input {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 14px; color: var(--text);
+  border: none; background: none; padding: 0; margin: 0;
+  outline: none; border-bottom: 1.5px solid var(--accent);
+}
+.member-mgmt-rename, .member-mgmt-del {
+  background: none; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text-soft); padding: 4px 9px; line-height: 1;
+  font-size: 11px; font-weight: 600; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+}
+.member-mgmt-rename:hover { color: var(--accent); border-color: var(--accent); }
+.member-mgmt-del:hover { color: var(--danger); border-color: var(--danger); }
+
 /* 공유 대상 선택 모달 안 목록 */
 .share-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .share-item {

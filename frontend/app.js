@@ -279,14 +279,21 @@ function showTaskToast(task) {
 }
 
 // ===== 태스크 공유 대상 선택 모달 =====
+// 목록에서 이름을 눌러도 그 자리에서 바로 공유되지 않고 "선택"만 됨(하이라이트) — 실제 반영은
+// 아래 "공유하기" 버튼을 눌러야 함. 모달을 열 때도 아무것도 미리 선택해두지 않음(전체가 기본
+// 선택된 상태였으면 실수로 버튼을 눌렀을 때 전체공유가 돼버리는 사고가 날 수 있어서 방지)
+let pendingShareTarget = null;
 function openShareModal(taskId) {
   shareModalTaskId = taskId;
+  pendingShareTarget = null;
   renderShareList();
+  $('#confirmShareBtn').disabled = true;
   $('#shareBackdrop').classList.add('open');
   resizeToContent();
 }
 function closeShareModal() {
   shareModalTaskId = null;
+  pendingShareTarget = null;
   $('#shareBackdrop').classList.remove('open');
   resizeToContent();
 }
@@ -295,20 +302,25 @@ function renderShareList() {
   list.innerHTML = '';
   const { todo } = findTodoAndParent(shareModalTaskId);
   const currentAssignee = todo ? (todo.assignee || '') : '';
+  $('#shareCurrentHint').textContent = currentAssignee ? `현재 "${currentAssignee}"님에게 공유됨` : '현재 전체 공개';
 
   const makeItem = (value, label, isAll) => {
     const li = document.createElement('li');
-    li.className = 'share-item' + (isAll ? ' share-all' : '') + (value === currentAssignee ? ' selected' : '');
+    li.className = 'share-item' + (isAll ? ' share-all' : '') + (value === pendingShareTarget ? ' selected' : '');
     const span = document.createElement('span');
     span.textContent = label;
     li.appendChild(span);
-    if (value === currentAssignee) {
+    if (value === pendingShareTarget) {
       const check = document.createElement('span');
       check.className = 'check';
       check.textContent = '✓';
       li.appendChild(check);
     }
-    li.addEventListener('click', () => assignShareTarget(value));
+    li.addEventListener('click', () => {
+      pendingShareTarget = value;
+      renderShareList();
+      $('#confirmShareBtn').disabled = false;
+    });
     return li;
   };
 
@@ -317,14 +329,100 @@ function renderShareList() {
     list.appendChild(makeItem(name, name, false));
   });
 }
-function assignShareTarget(assignee) {
+function confirmShareTarget() {
+  if (pendingShareTarget === null) return; // 아직 아무것도 선택 안 했으면 눌러도 아무 일 없음
   const taskId = shareModalTaskId;
+  const assignee = pendingShareTarget;
   const { todo } = findTodoAndParent(taskId);
   if (!todo) { closeShareModal(); return; }
   todo.assignee = assignee; // 낙관적 반영
   renderPersonalTodos();
   closeShareModal();
   apiPost({ action: 'taskAssign', id: taskId, assignee });
+}
+
+// ===== 회원 관리(관리자 전용 — "지금 로그인한 이름이 ADMIN_NAME인가"만 보고 간단히 판단) =====
+const ADMIN_NAME = '박혜근';
+async function openMembersModal() {
+  $('#membersBackdrop').classList.add('open');
+  resizeToContent();
+  renderMemberMgmtList(); // 캐시된 목록 먼저 보여주고
+  await fetchMembers();
+  renderMemberMgmtList(); // 최신 목록으로 다시 그림
+}
+function closeMembersModal() {
+  $('#membersBackdrop').classList.remove('open');
+  resizeToContent();
+}
+function renderMemberMgmtList() {
+  const list = $('#memberMgmtList');
+  list.innerHTML = '';
+  members.forEach(name => {
+    const li = document.createElement('li');
+    li.className = 'member-mgmt-item';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'member-mgmt-name';
+    nameSpan.textContent = name;
+    li.appendChild(nameSpan);
+
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'member-mgmt-rename';
+    renameBtn.textContent = '이름 변경';
+    renameBtn.addEventListener('click', () => startRenameMember(name, li, nameSpan));
+    li.appendChild(renameBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'member-mgmt-del';
+    delBtn.textContent = '삭제';
+    delBtn.addEventListener('click', () => deleteMember(name));
+    li.appendChild(delBtn);
+
+    list.appendChild(li);
+  });
+}
+function startRenameMember(oldName, li, nameSpan) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'member-mgmt-edit-input';
+  input.value = oldName;
+  li.replaceChild(input, nameSpan);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const commit = async () => {
+    if (done) return;
+    done = true;
+    const newName = input.value.trim();
+    if (!newName || newName === oldName) { renderMemberMgmtList(); return; }
+    // 낙관적 반영 — 명단/공유 태스크의 owner·assignee 표시, 내 이름(나 자신을 바꾼 경우)까지 바로 갱신
+    members = members.map(n => (n === oldName ? newName : n));
+    sharedTasks.forEach(t => {
+      if (t.owner === oldName) t.owner = newName;
+      if (t.assignee === oldName) t.assignee = newName;
+    });
+    if (localData.userName === oldName) { localData.userName = newName; persistLocalData(); }
+    renderMemberMgmtList();
+    renderPersonalTodos();
+    try {
+      await apiPost({ action: 'memberRename', oldName, newName });
+    } catch (err) {
+      console.error('[renameMember] 실패(오프라인 등) — 다음에 다시 시도 필요', err);
+    }
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { done = true; renderMemberMgmtList(); }
+  });
+  input.addEventListener('blur', commit);
+}
+function deleteMember(name) {
+  members = members.filter(n => n !== name); // 낙관적 반영 — 남긴 태스크 자체는 그대로 둠
+  renderMemberMgmtList();
+  apiPost({ action: 'memberDelete', name });
 }
 
 function findTodoAndParent(id) {
@@ -588,6 +686,7 @@ function openNamePrompt(cancelable) {
       cleanup();
       localData.userName = v;
       persistLocalData();
+      if ($('#manageMembersBtn')) $('#manageMembersBtn').hidden = v !== ADMIN_NAME;
       // 네트워크가 끊겨있으면 memberRegister가 예외를 던질 수 있는데, 그걸 그냥 두면 resolve()가
       // 영원히 안 불려서 앱 시작 자체가 멈춰버림 — 오프라인이어도 이름은 이미 저장했으니 일단
       // 진행시키고, 명단 등록/새로고침은 되면 하고 안 되면 다음 폴링 때 다시 시도되게 둠
@@ -691,7 +790,7 @@ function resizeToContent() {
   // 모달/팝업은 #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 안 잡혀서(measureContentHeight가
   // #app 기준이라 모달 내용은 아예 안 셈) 열려있는 동안은 무조건 이 고정 크기를 씀 — 안 그러면 위젯용
   // 작은 창 위에 모달만 넘치게 됨. nameBackdrop(최초 이름 입력)도 같은 이유로 여기 포함시켜야 함
-  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open') || $('#shareBackdrop')?.classList.contains('open')) {
+  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open') || $('#shareBackdrop')?.classList.contains('open') || $('#membersBackdrop')?.classList.contains('open')) {
     window.api?.resize?.(currentW, MODAL_FIXED_H);
     return;
   }
@@ -738,11 +837,11 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-share-redesign', tag: 'improved', date: '7/28', text: 'My Notes 공유 방식 개선 — 항목마다 ↗ 버튼으로 대상 선택 후 "공유하기"로 확정(실수 방지), 받으면 알림 뜸. 추가할 때 지연 체감 없앰' },
   { id: 'u2026-shared-tasks', tag: 'new', date: '7/28', text: 'My Notes가 팀 공유 태스크로 — 최초 실행 시 이름 등록, 특정 팀원에게 보내기, 톱니 메뉴에서 이름 변경 가능' },
   { id: 'u2026-diary-polish', tag: 'improved', date: '7/27', text: '다이어리 모드 개선 — My Notes 드래그로 순서 변경, 달력/My Notes 폭 조절 핸들, 창 높이에 맞춰 내용 꽉 차게' },
   { id: 'u2026-update-fix', tag: 'fix', date: '7/27', text: '업데이트/자동실행 안정화 — 확인 안 눌러도 자동 진행되던 버그, 시작프로그램 오류 화면 뜨던 문제 수정' },
   { id: 'u2026-diary-mode', tag: 'new', date: '7/24', text: '다이어리 모드 — 제목표시줄 아이콘으로 옆으로 넓어지는 보드 형태(달력+My Notes+일정) 전환' },
-  { id: 'u2026-update-ux', tag: 'improved', date: '7/24', text: '업데이트 방식 단순화 — 실행할 때 한 번 확인, 있으면 물어보고 Yes 하면 알아서 재시작까지 자동' },
 ];
 // 빨간 점(배지)과 목록에서 지우는 건 서로 다른 상태임 —
 // 배지는 팝업을 한 번 열어서 "확인"만 하면 사라짐(읽음 처리), 목록의 개별 항목은 ×로
@@ -997,6 +1096,7 @@ async function init() {
   // My Notes(공유 태스크) — 최초 1회 이름 확인 → 예전 로컬 데이터 있으면 웹으로 이관 → 팀원
   // 명단·태스크 목록 로드. 이 넷은 순서가 중요해서(이름 있어야 이관/등록 가능) await로 순차 실행
   await ensureUserName();
+  if ($('#manageMembersBtn')) $('#manageMembersBtn').hidden = localData.userName !== ADMIN_NAME;
   await migrateLocalTasksIfNeeded();
   fetchMembers();
   fetchSharedTasks();
@@ -2166,6 +2266,17 @@ function bindEvents() {
     closePopover();
     editUserName();
   });
+
+  // ── 회원 관리(관리자 전용 버튼 — hidden 해제는 init()에서) ──
+  $('#manageMembersBtn')?.addEventListener('click', () => {
+    closePopover();
+    openMembersModal();
+  });
+  $('#closeMembersModal').addEventListener('click', closeMembersModal);
+  $('#membersBackdrop').addEventListener('click', (e) => { if (e.target.id === 'membersBackdrop') closeMembersModal(); });
+
+  // ── 태스크 공유 대상 선택 확정 버튼 ──
+  $('#confirmShareBtn').addEventListener('click', confirmShareTarget);
   $('#icsBackdrop').addEventListener('click', (e) => {
     if (e.target.id === 'icsBackdrop') { $('#icsBackdrop').classList.remove('open'); resizeToContent(); }
   });
