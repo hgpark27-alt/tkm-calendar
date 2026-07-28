@@ -860,6 +860,7 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-refresh-mynotes', tag: 'fix', date: '7/29', text: '새로고침 버튼이 일정만 갱신하고 My Notes는 그대로였던 문제 수정 — 이제 새로고침 버튼 + 창에 다시 포커스할 때 둘 다 My Notes도 같이 최신으로 맞춰짐(모바일 등 다른 곳에서 바꾼 게 최대 2분 기다릴 필요 없이 반영)' },
   { id: 'u2026-share-copy-model', tag: 'fix', date: '7/28', text: '(중요) My Notes 공유 방식을 복사본 발송으로 변경 — 이제 항상 내가 쓴 노트만 보이고(전체공개로 새던 버그 해결), 공유는 그 순간 내용을 받는 사람 이름으로 복사해서 보냄(이후 서로 독립적, 지워도 원본엔 영향 없음). 받은 노트엔 보낸 사람 이름표 표시' },
   { id: 'u2026-activity-dup-fix', tag: 'fix', date: '7/28', text: '일정 추가할 때 "추가됨"과 함께 의미없는 "삭제됨" 알림이 같이 뜨던 버그 수정' },
   { id: 'u2026-share-redesign', tag: 'improved', date: '7/28', text: 'My Notes 공유 방식 개선 — 항목마다 ↗ 버튼으로 대상 선택 후 "공유하기"로 확정(실수 방지), 받으면 알림 뜸. 추가할 때 지연 체감 없앰' },
@@ -1162,6 +1163,9 @@ async function init() {
 
   // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리하고 달력만 남김
   window.api?.onBlur?.(closeAllOverlaysOnBlur);
+  // 모바일 등 다른 곳에서 My Notes를 건드리고 이 창으로 다시 돌아왔을 때, 최대 2분 폴링을
+  // 기다리지 않고 포커스 얻는 시점에 바로 최신 상태로 맞춰줌(따로 새로고침 누를 필요 없게)
+  window.api?.onFocus?.(() => fetchSharedTasks());
   // 포커스를 얻는 것 자체(win-focus)로는 안 펼침 — 손잡이를 눌러서 창을 옮기기만 해도
   // OS 포커스는 얻어지기 때문에, 펼치는 건 "실제로 클릭(드래그 아님)했을 때"로만 판단함
   document.addEventListener('click', (e) => {
@@ -2180,12 +2184,15 @@ function bindEvents() {
   });
 
   // ── 수동 새로고침 ──
+  // 예전엔 캘린더 일정만 다시 받아오고 My Notes(공유 태스크)는 그대로 2분 폴링을 기다려야 했음 —
+  // 모바일 페이지에서 지우거나 추가한 게 이 버튼을 눌러도 안 보여서 "새로고침이 안 된다"는
+  // 오해를 샀던 원인. fetchSharedTasks도 같이 불러서 눌렀을 때 전부 최신으로 맞춰지게 함
   $('#refreshBtn').addEventListener('click', () => {
     const icon = $('#refreshBtn');
     icon.classList.add('spinning');
     monthCache.delete(monthKey(state.year, state.month)); // 캐시 무시하고 강제로 다시 받아옴
     apiGet({ action: 'categories' }).then(catRes => { if (catRes.ok) state.categories = catRes.categories; });
-    loadMonth().finally(() => icon.classList.remove('spinning'));
+    Promise.all([loadMonth(), fetchSharedTasks()]).finally(() => icon.classList.remove('spinning'));
   });
 
   // ── 설정 팝업 ──
