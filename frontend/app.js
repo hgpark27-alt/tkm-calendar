@@ -917,6 +917,7 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-autolaunch-default', tag: 'improved', date: '7/29', text: '윈도우 시작 시 자동 실행이 기본값으로 켜짐(최초 1회만 자동 적용, 이후 직접 끄면 유지됨)' },
   { id: 'u2026-resize-monitor-fix', tag: 'fix', date: '7/29', text: '다른 배율의 모니터로 드래그하면 창 크기가 계속 커지던 버그 수정 — 드래그 중엔 자동 크기 맞춤을 잠깐 꺼둠' },
   { id: 'u2026-race-queue', tag: 'fix', date: '7/29', text: '노트 만들자마자 바로 완료체크/삭제/공유하면 가끔 조용히 씹히던 문제 수정. 이제 전송 성공/실패를 위쪽에 잠깐 알려줌. 하위 항목은 공유 버튼 제거(애매해서), 일정 Send To는 내 My Notes에도 같이 추가됨' },
   { id: 'u2026-diary-default', tag: 'improved', date: '7/29', text: '다이어리 모드가 이제 기본값(첫 실행 시 켜진 채로 시작) — 한번 끄면 그 상태를 기억함' },

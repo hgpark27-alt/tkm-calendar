@@ -287,6 +287,25 @@ app.whenReady().then(() => {
     } catch (err) { console.error('[auto-launch migration]', err) }
   }
 
+  // 시작프로그램 자동 실행 기본값을 켬으로 바꿈 — 딱 한 번만 적용(prefs.autoLaunchDefaultSet로
+  // 기록해둠), 그 이후엔 사용자가 설정 메뉴에서 직접 끄고 켜는 걸 존중하고 다시 안 건드림
+  if (app.isPackaged) {
+    try {
+      const prefs = loadPrefs()
+      if (!prefs.autoLaunchDefaultSet) {
+        if (!fs.existsSync(startupShortcutPath())) {
+          const linkPath = startupShortcutPath()
+          const exe = process.execPath
+          const psCmd = `$s=(New-Object -COM WScript.Shell).CreateShortcut('${linkPath}'); $s.TargetPath='${exe}'; $s.Save()`
+          execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', psCmd], (err) => {
+            if (err) console.error('[auto-launch default-on]', err)
+          })
+        }
+        savePrefs({ ...prefs, autoLaunchDefaultSet: true })
+      }
+    } catch (err) { console.error('[auto-launch default-on]', err) }
+  }
+
   // 실행 시점에 딱 한 번만 조회. 업데이트가 있으면 렌더러가 확인창을 띄움(위 update-available)
   if (app.isPackaged) autoUpdater.checkForUpdates()
 
