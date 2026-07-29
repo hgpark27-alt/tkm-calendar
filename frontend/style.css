@@ -530,6 +530,8 @@ body {
   padding: 1px 6px;
   white-space: nowrap;
 }
+/* 캘린더 일정에서 Send To로 온 노트 — 보낸 사람 대신 일정 날짜(MM/DD)를 빨갛게 표시 */
+.todo-date-tag { color: var(--danger); border-color: var(--danger); background: none; font-weight: 700; }
 
 /* 공유 대상 지정 버튼 — 특정 사람에게 보낸 상태면 강조색으로 표시 */
 .todo-share {
@@ -759,22 +761,15 @@ body {
 .chip .dot { width: 8px; height: 8px; }
 .chip.active { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 
-.recent-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: -6px 0 12px; }
-.recent-chips:empty { margin: 0; }
-.recent-chip {
-  padding: 4px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
-  color: var(--text-soft);
-  font-size: 11px;
+/* "Author" 자리를 대신하는 Send To 버튼 — 고른 대상이 있으면 강조색으로 표시 */
+.btn-field-action {
+  text-align: left;
+  font: inherit; font-size: 13.5px; color: var(--text-soft);
+  padding: 8px 10px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--bg-soft);
   cursor: pointer;
-  max-width: 130px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.recent-chip:hover { border-color: var(--accent); color: var(--accent); }
+.btn-field-action.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
 
 .weekday-picker { display: flex; gap: 4px; }
 .weekday-picker button {

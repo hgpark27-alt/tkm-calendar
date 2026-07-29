@@ -141,6 +141,25 @@
     </div>
   </div>
 
+  <!-- 일정 등록 시 "Send To" 대상 선택(여러 명 가능) — 확정하면 그 일정 내용이 대상들의
+       My Notes로 각각 복사돼서 들어감(일정 저장 시점에 실제로 전송됨) -->
+  <div class="modal-backdrop" id="sendToBackdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Send To</h2>
+        <button class="close-btn" id="closeSendToModal" aria-label="Close">×</button>
+      </div>
+      <p class="hint info" style="margin: 0 0 10px;">
+        선택한 사람들의 My Notes로 이 일정 내용이 전송됩니다(저장을 눌러야 실제로 전송됨). 한 명
+        이상 고르면 이 일정은 자동으로 Team Post로 등록돼요.
+      </p>
+      <ul class="share-list" id="sendToList"></ul>
+      <div class="modal-actions">
+        <button class="btn-primary" id="confirmSendToBtn">선택 완료</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 회원 관리(관리자 전용 — 이름 변경/삭제) -->
   <div class="modal-backdrop" id="membersBackdrop">
     <div class="modal">
@@ -219,11 +238,9 @@
         <input type="text" id="fTitle" placeholder="Task description">
       </label>
 
-      <div class="recent-chips" id="recentChips"></div>
-
       <label class="field">
-        <span>Author</span>
-        <input type="text" id="fAuthor" placeholder="Name">
+        <span>Send To</span>
+        <button type="button" class="btn-field-action" id="openSendTo">선택 안 함</button>
       </label>
 
       <label class="field">

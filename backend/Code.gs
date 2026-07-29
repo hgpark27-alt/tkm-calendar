@@ -340,7 +340,9 @@ function parseKrHolidayIcs_(ics) {
 const TASKS_SHEET_NAME = 'SharedTasks';
 // assignee 비어있으면 "모두에게 보냄"(전체 공개), 채워져 있으면 그 이름인 사람한테 보낸 태스크
 // (+ 원래 만든 사람(owner)한테도 항상 보임 — 자기가 누구한테 보냈는지는 알아야 하니까)
-const TASKS_HEADERS = ['id', 'text', 'done', 'parentId', 'order', 'owner', 'assignee', 'createdAt', 'updatedAt'];
+// eventDate: 캘린더 일정의 "Send To"로 만들어진 복사본에만 채워짐(YYYY-MM-DD) — 프론트엔드가
+// 이게 있으면 "OOO님이 보냄" 대신 그 날짜를 빨간 MM/DD 태그로 보여줌
+const TASKS_HEADERS = ['id', 'text', 'done', 'parentId', 'order', 'owner', 'assignee', 'createdAt', 'updatedAt', 'eventDate'];
 
 // 팀원 명단 — 최초 실행 때 이름 입력하면 여기 등록됨. "태스크 보내기" 드롭다운이 이 목록을 씀.
 // 태스크 시트랑 같은 스프레드시트 안에 탭만 하나 더 쓰는 것(별도 파일 안 만듦)
@@ -418,12 +420,22 @@ function deleteMember(body) {
   return {}; // 이미 없으면 성공 취급(멱등)
 }
 
+// eventDate가 'YYYY-MM-DD' 같은 순수 날짜 문자열이면 시트가 "이건 날짜구나" 하고 멋대로
+// 진짜 Date 셀로 바꿔버림(자동 인식) — 그러면 나중에 읽을 때 타임존 계산까지 끼어들어서 하루가
+// 밀린 ISO 문자열로 돌아옴(실측: '2026-08-05'를 넣었는데 '2026-08-04T15:00:00.000Z'로 나옴).
+// 값 넣기 전에 그 컬럼 서식을 "일반 텍스트(@)"로 미리 지정해두면 문자열 그대로 저장됨
+function formatEventDateColumnAsText_(sheet) {
+  const col = TASKS_HEADERS.indexOf('eventDate') + 1;
+  sheet.getRange(1, col, sheet.getMaxRows(), 1).setNumberFormat('@');
+}
+
 function getTasksSheet_() {
   const ss = SpreadsheetApp.openById(TASKS_SHEET_ID);
   let sheet = ss.getSheetByName(TASKS_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(TASKS_SHEET_NAME);
     sheet.appendRow(TASKS_HEADERS);
+    formatEventDateColumnAsText_(sheet);
     return sheet;
   }
   // 컬럼(assignee 등)을 나중에 추가하면 이미 만들어진 시트의 1행(헤더)은 예전 그대로 남아서
@@ -433,6 +445,7 @@ function getTasksSheet_() {
   const matches = TASKS_HEADERS.every((h, i) => currentHeaders[i] === h);
   if (!matches) {
     sheet.getRange(1, 1, 1, TASKS_HEADERS.length).setValues([TASKS_HEADERS]);
+    formatEventDateColumnAsText_(sheet); // 헤더가 방금 고쳐졌다 = eventDate 컬럼이 새로 생겼을 수 있는 시점
   }
   return sheet;
 }
@@ -475,10 +488,19 @@ function addTask(body) {
     body.parentId || '',
     body.order || 0,
     body.owner || '',
-    body.assignee || '', // 빈 값 = 모두에게, 채워지면 그 사람 전용(+ owner에게도 항상 보임)
+    body.assignee || '', // 이 태스크를 보낸 사람 이름(직접 쓴 노트면 비어있음)
     now,
     now,
+    '', // eventDate는 일단 비워서 넣고 바로 아래에서 텍스트 서식 지정 후 채움(자동 날짜 변환 방지)
   ]);
+  if (body.eventDate) {
+    const eventDateColIdx = TASKS_HEADERS.indexOf('eventDate') + 1;
+    const lastRow = sheet.getLastRow();
+    // 미리 컬럼 전체를 텍스트 서식으로 지정해도 appendRow가 빈 문자열을 넣은 뒤라 그런지 그대로
+    // 날짜로 자동 변환되는 경우가 있었음(실측) — 그래서 이 셀 하나만 확실하게 텍스트로 지정하고
+    // 그 다음에 값을 넣음(순서가 중요: 서식 먼저, 값은 그 다음)
+    sheet.getRange(lastRow, eventDateColIdx).setNumberFormat('@').setValue(body.eventDate);
+  }
   return { id: id };
 }
 

@@ -159,32 +159,6 @@ function persistLocalData() {
   else localStorage.setItem('tkm_localdata', JSON.stringify(localData));
 }
 
-function trackRecentTask(title) {
-  const t = (title || '').trim();
-  if (!t) return;
-  localData.recentTasks = [t, ...localData.recentTasks.filter(x => x !== t)].slice(0, 4);
-  persistLocalData();
-}
-
-function renderRecentChips() {
-  const wrap = $('#recentChips');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-  localData.recentTasks.forEach(title => {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'recent-chip';
-    chip.textContent = title;
-    chip.title = title;
-    chip.addEventListener('click', () => {
-      $('#fTitle').value = title;
-      onSaveEvent(); // 클릭 한 번으로 바로 저장 — 나머지는 지금 모달의 기본값 그대로
-    });
-    wrap.appendChild(chip);
-  });
-  resizeToContent();
-}
-
 // My Notes는 이제 이 컴퓨터에만 있는 게 아니라 구글 시트를 통해 팀 전체가 공유하는 태스크임 —
 // sharedTasks엔 서버에 있는 모든 사람의 태스크가 평평한(flat) 목록으로 다 들어있고, 화면엔
 // 그중 owner가 나인 것만 골라서(visibleTaskTree) parentId 기준으로 부모-자식(1단계까지만)
@@ -541,8 +515,16 @@ function buildTodoRow(todo, parentId) {
   li.appendChild(text);
 
   // 목록엔 항상 내가 owner인 것만 뜨지만(visibleTaskTree), 그중에서도 남이 보내준 복사본은
-  // assignee에 "보낸 사람" 이름이 남아있음(직접 쓴 노트는 비어있음) — 그것만 표시
-  if (todo.assignee) {
+  // assignee에 "보낸 사람" 이름이 남아있음(직접 쓴 노트는 비어있음) — 캘린더 일정의 Send To로
+  // 온 것만 eventDate가 채워져 있고, 그럴 땐 "보낸 사람" 대신 그 일정 날짜를 빨간 태그로 보여줌
+  // (일정에서 온 노트는 누가 보냈는지보다 언제인지가 더 쓸모있는 정보라서 대신함)
+  if (todo.eventDate) {
+    const dateTag = document.createElement('span');
+    dateTag.className = 'todo-owner-tag todo-date-tag';
+    const [, m, d] = todo.eventDate.split('-');
+    dateTag.textContent = `${m}/${d}`;
+    li.appendChild(dateTag);
+  } else if (todo.assignee) {
     const ownerTag = document.createElement('span');
     ownerTag.className = 'todo-owner-tag';
     ownerTag.textContent = `${todo.assignee}님이 보냄`;
@@ -813,7 +795,7 @@ function resizeToContent() {
   // 모달/팝업은 #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 안 잡혀서(measureContentHeight가
   // #app 기준이라 모달 내용은 아예 안 셈) 열려있는 동안은 무조건 이 고정 크기를 씀 — 안 그러면 위젯용
   // 작은 창 위에 모달만 넘치게 됨. nameBackdrop(최초 이름 입력)도 같은 이유로 여기 포함시켜야 함
-  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open') || $('#shareBackdrop')?.classList.contains('open') || $('#membersBackdrop')?.classList.contains('open')) {
+  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open') || $('#shareBackdrop')?.classList.contains('open') || $('#membersBackdrop')?.classList.contains('open') || $('#sendToBackdrop')?.classList.contains('open')) {
     window.api?.resize?.(currentW, MODAL_FIXED_H);
     return;
   }
@@ -860,6 +842,7 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-send-to', tag: 'new', date: '7/29', text: '일정 등록 시 Author 자리가 Send To로 바뀜 — 골라서 저장하면 그 사람 My Notes로 일정 내용이 전송됨(자동으로 Team Post 지정). 받은 노트엔 보낸 사람 대신 일정 날짜가 빨갛게 표시. 최근 입력 기록 칩은 제거해서 공간 확보' },
   { id: 'u2026-refresh-mynotes', tag: 'fix', date: '7/29', text: '새로고침 버튼이 일정만 갱신하고 My Notes는 그대로였던 문제 수정 — 이제 새로고침 버튼 + 창에 다시 포커스할 때 둘 다 My Notes도 같이 최신으로 맞춰짐(모바일 등 다른 곳에서 바꾼 게 최대 2분 기다릴 필요 없이 반영)' },
   { id: 'u2026-share-copy-model', tag: 'fix', date: '7/28', text: '(중요) My Notes 공유 방식을 복사본 발송으로 변경 — 이제 항상 내가 쓴 노트만 보이고(전체공개로 새던 버그 해결), 공유는 그 순간 내용을 받는 사람 이름으로 복사해서 보냄(이후 서로 독립적, 지워도 원본엔 영향 없음). 받은 노트엔 보낸 사람 이름표 표시' },
   { id: 'u2026-activity-dup-fix', tag: 'fix', date: '7/28', text: '일정 추가할 때 "추가됨"과 함께 의미없는 "삭제됨" 알림이 같이 뜨던 버그 수정' },
@@ -1579,7 +1562,7 @@ async function onDelete(ev) {
     return;
   }
 
-  const myName = localStorage.getItem('tkm_username') || '';
+  const myName = localData.userName || '';
   if (ev.author && myName && ev.author.trim() !== myName.trim()) {
     if (!safeConfirm(`이 일정은 "${ev.author}"님이 등록했습니다. 그래도 삭제하시겠어요?`)) return;
   }
@@ -1655,7 +1638,6 @@ function openAddModal() {
   $('#fDate').value = state.selectedDate || todayKey();
   $('#fTime').value = ''; // 비워두면 하루종일 — 억지로 기본 시간을 채우지 않음
   $('#fTitle').value = '';
-  $('#fAuthor').value = localStorage.getItem('tkm_username') || '';
   $('#fRepeat').value = 'none';
   $('#fIntervalDays').value = 3;
   $('#fUntil').value = '';
@@ -1666,7 +1648,8 @@ function openAddModal() {
   $('#untilRow').hidden = true;
   setHint('');
   renderCatChips();
-  renderRecentChips();
+  sendToSelection = []; // 새 일정 작성 시작할 때마다 Send To는 항상 초기화
+  updateSendToButtonLabel();
   $('#weekdayPicker').querySelectorAll('button').forEach(b => b.classList.remove('active'));
   $('#modalBackdrop').classList.add('open');
   resizeToContent();
@@ -1679,6 +1662,83 @@ function setScopeToggle(scope, locked) {
   wrap.querySelectorAll('.scope-btn').forEach(b => b.classList.toggle('active', b.dataset.scope === scope));
 }
 
+// ===== 일정의 "Send To" — 예전 Author 자리를 대신함 =====
+// 계정(로그인 이름) 개념이 생겼으니 "누가 썼는지"를 손으로 적을 필요가 없어졌고, 대신 "이
+// 일정을 누구 My Notes로도 보낼지"를 고름. 저장 버튼을 눌러야 실제로 전송됨(My Notes 공유
+// 모달과 같은 select-then-confirm — 실수 방지). SHARE_ALL을 고르면 개별 선택은 무의미해지므로
+// 서로 배타적으로 처리함
+let sendToSelection = [];
+function openSendToModal() {
+  renderSendToList();
+  $('#sendToBackdrop').classList.add('open');
+  resizeToContent();
+}
+function closeSendToModal() {
+  $('#sendToBackdrop').classList.remove('open');
+  resizeToContent();
+}
+function renderSendToList() {
+  const list = $('#sendToList');
+  list.innerHTML = '';
+  const makeItem = (value, label, isAll) => {
+    const li = document.createElement('li');
+    const isSelected = sendToSelection.includes(value);
+    li.className = 'share-item' + (isAll ? ' share-all' : '') + (isSelected ? ' selected' : '');
+    const span = document.createElement('span');
+    span.textContent = label;
+    li.appendChild(span);
+    if (isSelected) {
+      const check = document.createElement('span');
+      check.className = 'check';
+      check.textContent = '✓';
+      li.appendChild(check);
+    }
+    li.addEventListener('click', () => {
+      if (value === SHARE_ALL) {
+        sendToSelection = isSelected ? [] : [SHARE_ALL];
+      } else {
+        sendToSelection = sendToSelection.filter(v => v !== SHARE_ALL); // 개별을 고르면 전체 선택은 해제
+        sendToSelection = isSelected ? sendToSelection.filter(v => v !== value) : [...sendToSelection, value];
+      }
+      renderSendToList();
+    });
+    return li;
+  };
+  list.appendChild(makeItem(SHARE_ALL, '전체', true));
+  members.filter(name => name !== localData.userName).forEach(name => {
+    list.appendChild(makeItem(name, name, false));
+  });
+}
+function updateSendToButtonLabel() {
+  const btn = $('#openSendTo');
+  if (!btn) return;
+  if (!sendToSelection.length) { btn.textContent = '선택 안 함'; btn.classList.remove('active'); return; }
+  btn.classList.add('active');
+  btn.textContent = sendToSelection.includes(SHARE_ALL) ? '전체'
+    : sendToSelection.length === 1 ? sendToSelection[0]
+    : `${sendToSelection[0]} 외 ${sendToSelection.length - 1}명`;
+}
+function confirmSendTo() {
+  closeSendToModal();
+  updateSendToButtonLabel();
+  if (sendToSelection.length) setScopeToggle('team', false); // 한 명 이상 고르면 자동으로 Team Post
+}
+// 일정 저장이 실제로 성공했을 때만 호출 — 그 순간 제목/날짜를 대상들 My Notes로 각각 복사(taskAdd
+// 재사용). eventDate가 있으면 받는 쪽 화면에서 "OOO님이 보냄" 대신 빨간 날짜 태그로 표시됨
+function sendEventCopiesIfNeeded(title, date) {
+  if (!sendToSelection.length) return;
+  const recipients = sendToSelection.includes(SHARE_ALL)
+    ? members.filter(name => name !== localData.userName)
+    : [...sendToSelection];
+  recipients.forEach(name => {
+    const topLevelOrders = sharedTasks.filter(t => t.owner === name && !t.parentId).map(t => Number(t.order) || 0);
+    const newOrder = topLevelOrders.length ? Math.min(...topLevelOrders) - 1 : 0;
+    apiPost({ action: 'taskAdd', text: title, owner: name, assignee: localData.userName, parentId: '', order: newOrder, eventDate: date });
+  });
+  sendToSelection = [];
+  updateSendToButtonLabel();
+}
+
 function openEditModal(ev) {
   // Personal 반복 일정은 화면에 펼쳐진 특정 발생일(가짜 id)이 아니라 원본 시리즈(seriesId)를 수정함
   state.editingId = (ev.isPersonal && ev.isRecurring) ? ev.seriesId : ev.id;
@@ -1687,7 +1747,6 @@ function openEditModal(ev) {
   $('#fDate').value = ev.date;
   $('#fTime').value = ev.allDay ? '' : (ev.time || '');
   $('#fTitle').value = ev.title;
-  $('#fAuthor').value = ev.author || '';
   setScopeToggle(ev.isPersonal ? 'personal' : 'team', true);
   // 수정 모드에서는 반복 패턴 자체는 바꾸지 않음(복잡도 방지) — 삭제 후 재등록으로 안내
   $('#repeatRow').hidden = true;
@@ -1702,7 +1761,8 @@ function openEditModal(ev) {
   }
   setHint(hint, 'info');
   renderCatChips(ev.category);
-  $('#recentChips').innerHTML = ''; // 수정 모드에서는 최근 업무 추천 안 보여줌
+  sendToSelection = []; // 수정 모드도 열 때마다 초기화 — 다시 고르지 않으면 재전송 안 됨
+  updateSendToButtonLabel();
   $('#modalBackdrop').classList.add('open');
   resizeToContent();
 }
@@ -1876,14 +1936,12 @@ async function onSaveEvent() {
   const title = $('#fTitle').value.trim();
   const date = $('#fDate').value;
   const time = $('#fTime').value; // '' 이면 하루종일
-  const author = $('#fAuthor').value.trim();
+  const author = localData.userName || ''; // 예전엔 매번 손으로 입력했는데, 이제 계정(로그인) 개념이 생겨서 자동으로 내 이름이 붙음
   const activeChip = $('#catChips .chip.active');
   const category = activeChip ? activeChip.dataset.cat : '';
 
   if (!title) { setHint('Please enter a title.', 'error'); return; }
   if (!date)  { setHint('Please select a date.', 'error'); return; }
-
-  if (author) localStorage.setItem('tkm_username', author);
 
   const scopeBtn = $('#scopeToggle .scope-btn.active');
   const isPersonal = state.editingId ? state.editingIsPersonal : (scopeBtn?.dataset.scope !== 'team');
@@ -1932,9 +1990,9 @@ async function onSaveEvent() {
     return;
   }
 
-  trackRecentTask(title);
   // 성공 — 실제 서버 상태로 재동기화(반복 일정이면 다른 달 확장분까지 정확히 반영됨)
   await loadMonth();
+  sendEventCopiesIfNeeded(title, date);
 }
 
 // ===== 수정 저장 (낙관적 업데이트 + 실패 시 롤백) =====
@@ -1972,6 +2030,7 @@ async function saveEdit(id, fields) {
   }
 
   await loadMonth();
+  sendEventCopiesIfNeeded(fields.title, fields.date);
 }
 
 // ===== Personal 일정 저장/수정 (로컬 전용 — 네트워크 없이 바로 반영, 반복 미지원) =====
@@ -1995,7 +2054,7 @@ function saveNewPersonal({ title, date, time, category, author, repeat }) {
   renderGrid();
   renderDayPanel();
   resettleSize();
-  trackRecentTask(title);
+  sendEventCopiesIfNeeded(title, date);
 }
 
 // 반복 일정 수정은 시리즈 전체(id 그대로, ev.repeat 있는 원본)에 적용됨 —
@@ -2017,6 +2076,7 @@ function saveEditPersonal(id, fields) {
   renderGrid();
   renderDayPanel();
   resettleSize();
+  sendEventCopiesIfNeeded(fields.title, fields.date);
 }
 
 // ===== Recurring event management =====
@@ -2314,6 +2374,12 @@ function bindEvents() {
 
   // ── 태스크 공유 대상 선택 확정 버튼 ──
   $('#confirmShareBtn').addEventListener('click', confirmShareTarget);
+
+  // ── 일정 등록/수정 모달의 Send To ──
+  $('#openSendTo').addEventListener('click', openSendToModal);
+  $('#closeSendToModal').addEventListener('click', closeSendToModal);
+  $('#sendToBackdrop').addEventListener('click', (e) => { if (e.target.id === 'sendToBackdrop') closeSendToModal(); });
+  $('#confirmSendToBtn').addEventListener('click', confirmSendTo);
   $('#icsBackdrop').addEventListener('click', (e) => {
     if (e.target.id === 'icsBackdrop') { $('#icsBackdrop').classList.remove('open'); resizeToContent(); }
   });
