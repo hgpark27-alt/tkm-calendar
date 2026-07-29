@@ -795,7 +795,7 @@ function resizeToContent() {
   // 모달/팝업은 #app의 형제 요소(position:fixed)라 #app 크기 관찰만으론 안 잡혀서(measureContentHeight가
   // #app 기준이라 모달 내용은 아예 안 셈) 열려있는 동안은 무조건 이 고정 크기를 씀 — 안 그러면 위젯용
   // 작은 창 위에 모달만 넘치게 됨. nameBackdrop(최초 이름 입력)도 같은 이유로 여기 포함시켜야 함
-  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open') || $('#shareBackdrop')?.classList.contains('open') || $('#membersBackdrop')?.classList.contains('open') || $('#sendToBackdrop')?.classList.contains('open')) {
+  if ($('#modalBackdrop')?.classList.contains('open') || $('#recurringBackdrop')?.classList.contains('open') || $('#nameBackdrop')?.classList.contains('open') || $('#shareBackdrop')?.classList.contains('open') || $('#membersBackdrop')?.classList.contains('open')) {
     window.api?.resize?.(currentW, MODAL_FIXED_H);
     return;
   }
@@ -842,6 +842,8 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-diary-default', tag: 'improved', date: '7/29', text: '다이어리 모드가 이제 기본값(첫 실행 시 켜진 채로 시작) — 한번 끄면 그 상태를 기억함' },
+  { id: 'u2026-sendto-dropdown-fix', tag: 'fix', date: '7/29', text: 'Send To가 모달 위에 모달로 떠서 뒤로 숨거나 바깥클릭이 꼬이던 문제 수정 — 버튼 바로 아래 드롭다운으로 바꿈' },
   { id: 'u2026-send-to', tag: 'new', date: '7/29', text: '일정 등록 시 Author 자리가 Send To로 바뀜 — 골라서 저장하면 그 사람 My Notes로 일정 내용이 전송됨(자동으로 Team Post 지정). 받은 노트엔 보낸 사람 대신 일정 날짜가 빨갛게 표시. 최근 입력 기록 칩은 제거해서 공간 확보' },
   { id: 'u2026-refresh-mynotes', tag: 'fix', date: '7/29', text: '새로고침 버튼이 일정만 갱신하고 My Notes는 그대로였던 문제 수정 — 이제 새로고침 버튼 + 창에 다시 포커스할 때 둘 다 My Notes도 같이 최신으로 맞춰짐(모바일 등 다른 곳에서 바꾼 게 최대 2분 기다릴 필요 없이 반영)' },
   { id: 'u2026-share-copy-model', tag: 'fix', date: '7/28', text: '(중요) My Notes 공유 방식을 복사본 발송으로 변경 — 이제 항상 내가 쓴 노트만 보이고(전체공개로 새던 버그 해결), 공유는 그 순간 내용을 받는 사람 이름으로 복사해서 보냄(이후 서로 독립적, 지워도 원본엔 영향 없음). 받은 노트엔 보낸 사람 이름표 표시' },
@@ -1193,6 +1195,7 @@ async function init() {
   }, 600000); // 10분 간격 — 외부 서비스 부담 덜 주게 팀 캘린더보다 느슨하게
 
   await loadMonth();
+  setDiaryMode(loadDiaryModePref());
 }
 
 function renderAll() {
@@ -1650,6 +1653,7 @@ function openAddModal() {
   renderCatChips();
   sendToSelection = []; // 새 일정 작성 시작할 때마다 Send To는 항상 초기화
   updateSendToButtonLabel();
+  closeSendToDropdown();
   $('#weekdayPicker').querySelectorAll('button').forEach(b => b.classList.remove('active'));
   $('#modalBackdrop').classList.add('open');
   resizeToContent();
@@ -1664,21 +1668,25 @@ function setScopeToggle(scope, locked) {
 
 // ===== 일정의 "Send To" — 예전 Author 자리를 대신함 =====
 // 계정(로그인 이름) 개념이 생겼으니 "누가 썼는지"를 손으로 적을 필요가 없어졌고, 대신 "이
-// 일정을 누구 My Notes로도 보낼지"를 고름. 저장 버튼을 눌러야 실제로 전송됨(My Notes 공유
-// 모달과 같은 select-then-confirm — 실수 방지). SHARE_ALL을 고르면 개별 선택은 무의미해지므로
-// 서로 배타적으로 처리함
+// 일정을 누구 My Notes로도 보낼지"를 고름. 처음엔 이걸 별도 모달로 만들었는데, 일정 등록
+// 모달 위에 모달을 하나 더 띄우니 뒤로 숨거나 바깥 클릭 처리가 서로 꼬여서(실측으로 확인)
+// 버튼 바로 아래 펼쳐지는 드롭다운으로 다시 만듦 — 같은 모달 안의 position:absolute라 별도
+// 배경/닫기 로직이 필요 없고 z-index 충돌도 구조적으로 안 생김. 클릭할 때마다 즉시
+// 선택/해제되고(확정 버튼 없음), 여러 명 계속 고를 수 있게 드롭다운은 열린 채로 유지되다가
+// 바깥을 클릭하면 닫힘. SHARE_ALL을 고르면 개별 선택은 무의미해지므로 서로 배타적으로 처리함
 let sendToSelection = [];
-function openSendToModal() {
-  renderSendToList();
-  $('#sendToBackdrop').classList.add('open');
-  resizeToContent();
+let sendToOpen = false;
+function toggleSendToDropdown() {
+  sendToOpen = !sendToOpen;
+  if (sendToOpen) renderSendToList();
+  $('#sendToDropdown').hidden = !sendToOpen;
 }
-function closeSendToModal() {
-  $('#sendToBackdrop').classList.remove('open');
-  resizeToContent();
+function closeSendToDropdown() {
+  sendToOpen = false;
+  $('#sendToDropdown').hidden = true;
 }
 function renderSendToList() {
-  const list = $('#sendToList');
+  const list = $('#sendToDropdown');
   list.innerHTML = '';
   const makeItem = (value, label, isAll) => {
     const li = document.createElement('li');
@@ -1700,7 +1708,9 @@ function renderSendToList() {
         sendToSelection = sendToSelection.filter(v => v !== SHARE_ALL); // 개별을 고르면 전체 선택은 해제
         sendToSelection = isSelected ? sendToSelection.filter(v => v !== value) : [...sendToSelection, value];
       }
-      renderSendToList();
+      updateSendToButtonLabel();
+      if (sendToSelection.length) setScopeToggle('team', false); // 한 명 이상 고르면 자동으로 Team Post
+      renderSendToList(); // 체크 표시만 다시 그림 — 드롭다운은 열린 채로 유지(계속 여러 명 고를 수 있게)
     });
     return li;
   };
@@ -1717,11 +1727,6 @@ function updateSendToButtonLabel() {
   btn.textContent = sendToSelection.includes(SHARE_ALL) ? '전체'
     : sendToSelection.length === 1 ? sendToSelection[0]
     : `${sendToSelection[0]} 외 ${sendToSelection.length - 1}명`;
-}
-function confirmSendTo() {
-  closeSendToModal();
-  updateSendToButtonLabel();
-  if (sendToSelection.length) setScopeToggle('team', false); // 한 명 이상 고르면 자동으로 Team Post
 }
 // 일정 저장이 실제로 성공했을 때만 호출 — 그 순간 제목/날짜를 대상들 My Notes로 각각 복사(taskAdd
 // 재사용). eventDate가 있으면 받는 쪽 화면에서 "OOO님이 보냄" 대신 빨간 날짜 태그로 표시됨
@@ -1763,6 +1768,7 @@ function openEditModal(ev) {
   renderCatChips(ev.category);
   sendToSelection = []; // 수정 모드도 열 때마다 초기화 — 다시 고르지 않으면 재전송 안 됨
   updateSendToButtonLabel();
+  closeSendToDropdown();
   $('#modalBackdrop').classList.add('open');
   resizeToContent();
 }
@@ -1775,7 +1781,7 @@ function preselectWeekdayIfEmpty() {
   const btn = picker.querySelector(`button[data-day="${dow}"]`);
   if (btn) btn.classList.add('active');
 }
-function closeAddModal() { $('#modalBackdrop').classList.remove('open'); resizeToContent(); }
+function closeAddModal() { $('#modalBackdrop').classList.remove('open'); closeSendToDropdown(); resizeToContent(); }
 function closePopover() {
   $('#settingsPopover').classList.remove('open');
   $('#popoverBackdrop').classList.remove('open');
@@ -1806,7 +1812,14 @@ const WIDGET_MIN_W = 220, WIDGET_MIN_H = 100; // main/index.js의 BrowserWindow 
 // 달력/My Notes 칸 폭 조절 핸들의 최소값 — 이 이상 좁아지면 못 알아보므로 드래그가 여기서 멈춤
 const MIN_CAL_COL_W = 260, MIN_DIARY_COL_W = 220;
 
+// 기본값은 켜짐(다이어리 모드) — 예상보다 다들 이 모드를 많이 써서 처음부터 켜진 채로 시작하게
+// 바꿈. 한번 끄고 켜면 그 상태를 기억해서 다음 실행부턴 마지막에 골랐던 모드로 열림
+function loadDiaryModePref() {
+  const saved = localStorage.getItem('tkm_diarymode');
+  return saved === null ? true : saved === 'on';
+}
 function setDiaryMode(on) {
+  localStorage.setItem('tkm_diarymode', on ? 'on' : 'off');
   if (diaryMode === on) return;
   diaryMode = on;
   const app = document.getElementById('app');
@@ -2376,10 +2389,14 @@ function bindEvents() {
   $('#confirmShareBtn').addEventListener('click', confirmShareTarget);
 
   // ── 일정 등록/수정 모달의 Send To ──
-  $('#openSendTo').addEventListener('click', openSendToModal);
-  $('#closeSendToModal').addEventListener('click', closeSendToModal);
-  $('#sendToBackdrop').addEventListener('click', (e) => { if (e.target.id === 'sendToBackdrop') closeSendToModal(); });
-  $('#confirmSendToBtn').addEventListener('click', confirmSendTo);
+  $('#openSendTo').addEventListener('click', (e) => { e.stopPropagation(); toggleSendToDropdown(); });
+  // 드롭다운 바깥(버튼도 드롭다운도 아닌 곳)을 누르면 닫음 — 별도 배경 오버레이 없이 이 리스너
+  // 하나로 처리(모달 두 개를 겹쳐 띄웠을 때 생기던 바깥클릭 충돌 자체가 안 생기는 구조)
+  document.addEventListener('click', (e) => {
+    if (!sendToOpen) return;
+    if (e.target.closest('#sendToDropdown') || e.target.closest('#openSendTo')) return;
+    closeSendToDropdown();
+  });
   $('#icsBackdrop').addEventListener('click', (e) => {
     if (e.target.id === 'icsBackdrop') { $('#icsBackdrop').classList.remove('open'); resizeToContent(); }
   });

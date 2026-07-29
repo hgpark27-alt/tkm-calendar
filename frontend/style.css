@@ -771,6 +771,23 @@ body {
 }
 .btn-field-action.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
 
+/* Send To — 버튼 바로 아래 이 자리에서 펼쳐지는 드롭다운(별도 모달 아님). 일정 등록 모달
+   위에 모달을 하나 더 겹쳐 띄우면 뒤로 숨거나 바깥 클릭 처리가 서로 꼬였어서(실측) 이 방식으로
+   바꿈 — 같은 모달 안의 position:absolute라 z-index/배경클릭 충돌이 아예 생길 수 없음 */
+.send-to-wrap { position: relative; }
+.send-to-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+  margin: 0; padding: 6px;
+  list-style: none;
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 200px; overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.18);
+}
+.send-to-dropdown[hidden] { display: none; }
+
 .weekday-picker { display: flex; gap: 4px; }
 .weekday-picker button {
   flex: 1; padding: 6px 0; border-radius: 8px;
