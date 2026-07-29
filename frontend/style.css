@@ -608,6 +608,13 @@ body {
 }
 .toast .toast-close:hover { color: var(--text); }
 
+/* 전송/공유 실패 알림 — 위쪽에, 훨씬 작게(성공은 조용히 넘어가지만 실패는 눈에 띄어야 함) */
+.toast-stack-top { top: 6px; bottom: auto; }
+.toast-error { border-color: var(--danger); background: var(--bg); padding: 5px 9px; font-size: 11px; }
+.toast-error .toast-text { color: var(--danger); }
+.toast-success { border-color: var(--accent); background: var(--bg); padding: 5px 9px; font-size: 11px; }
+.toast-success .toast-text { color: var(--accent); }
+
 /* 할 일 텍스트 클릭하면 나오는 인라인 수정 입력창 */
 .todo-edit-input {
   flex: 1; min-width: 0;

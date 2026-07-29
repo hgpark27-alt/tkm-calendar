@@ -165,7 +165,7 @@ function persistLocalData() {
 // 트리 모양으로 묶어서 보여줌.
 let sharedTasks = [];
 let members = [];
-let shareModalTaskId = null; // 지금 공유 대상 모달이 열려있는 태스크 id
+let shareModalTodo = null; // 지금 공유 대상 모달이 열려있는 태스크(객체 참조 — id는 나중에 바뀔 수 있음)
 
 // 공유는 "같이 보는 것"이 아니라 "복사해서 보내는 것" — 공유 버튼을 누르면 그 순간 내용을
 // 그대로 받는 사람 이름으로 새 태스크 한 줄을 시트에 추가함(기존 taskAdd 재사용, 새 액션 필요
@@ -258,13 +258,41 @@ function showTaskToast(task) {
   setTimeout(() => el.remove(), 8000); // 안 눌러도 8초 뒤 자동으로 사라짐
 }
 
+// 전송/공유가 실패했을 때만 쓰는 알림 — 성공은 원래 조용히 넘어가지만 실패는 조용히 묻히면
+// 안 됨(공유했다고 생각했는데 사실 안 갔던 사고 방지). 화면 상단에 작게, 짧게 노출
+function showTopToast(message, kind, durationMs) {
+  const stack = $('#toastStackTop');
+  if (!stack) return;
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' toast-' + kind : '');
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = message;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.textContent = '×';
+  close.addEventListener('click', () => el.remove());
+  el.appendChild(text);
+  el.appendChild(close);
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), durationMs);
+}
+function showTopErrorToast(message) { showTopToast(message, 'error', 1500); }
+// 성공은 실패보다 훨씬 짧게(4초) — 매번 볼 필요는 없고 "확실히 갔다"만 잠깐 확인시켜주는 용도
+function showTopSuccessToast(message) { showTopToast(message, 'success', 4000); }
+
 // ===== 태스크 공유 대상 선택 모달 =====
 // 목록에서 이름을 눌러도 그 자리에서 바로 보내지지 않고 "선택"만 됨(하이라이트) — 실제 전송은
 // 아래 "보내기" 버튼을 눌러야 함. 모달을 열 때도 아무것도 미리 선택해두지 않음(전체가 기본
 // 선택된 상태였으면 실수로 버튼을 눌렀을 때 전체한테 보내지는 사고가 날 수 있어서 방지)
 let pendingShareTarget = null;
-function openShareModal(taskId) {
-  shareModalTaskId = taskId;
+// 모달을 열 때 id 문자열이 아니라 todo 객체 참조 자체를 들고 있음 — 방금 만든 노트라 아직
+// 임시 id인 채로 이 모달을 열었는데, 고르는 사이 서버가 진짜 id를 내려줘서 patchTaskId가
+// 이 객체의 .id를 바꿔치기해도(같은 객체라 참조는 그대로) 여기서 항상 "지금" id를 읽게 돼서
+// 예전처럼 옛 id로 못 찾아 조용히 실패하는 일이 없어짐
+function openShareModal(todo) {
+  shareModalTodo = todo;
   pendingShareTarget = null;
   renderShareList();
   $('#confirmShareBtn').disabled = true;
@@ -272,7 +300,7 @@ function openShareModal(taskId) {
   resizeToContent();
 }
 function closeShareModal() {
-  shareModalTaskId = null;
+  shareModalTodo = null;
   pendingShareTarget = null;
   $('#shareBackdrop').classList.remove('open');
   resizeToContent();
@@ -317,13 +345,23 @@ function sendCopyTo(todo, recipient) {
 }
 function confirmShareTarget() {
   if (pendingShareTarget === null) return; // 아직 아무것도 선택 안 했으면 눌러도 아무 일 없음
-  const { todo } = findTodoAndParent(shareModalTaskId);
+  const todo = shareModalTodo;
   if (!todo) { closeShareModal(); return; }
   const recipients = pendingShareTarget === SHARE_ALL
     ? members.filter(name => name !== localData.userName)
     : [pendingShareTarget];
   closeShareModal(); // 여러 명한테 보내는 동안 기다릴 필요 없이 바로 닫음(내 화면은 원래 그대로라 딱히 안 바뀜)
-  recipients.forEach(name => sendCopyTo(todo, name));
+  const sendResults = recipients.map(name =>
+    sendCopyTo(todo, name)
+      .then(res => ({ name, ok: !!res.ok }))
+      .catch(err => { console.error('[sendCopyTo]', err); return { name, ok: false }; })
+  );
+  Promise.all(sendResults).then(results => {
+    const failed = results.filter(r => !r.ok).map(r => r.name);
+    const okCount = results.length - failed.length;
+    if (okCount) showTopSuccessToast(`"${todo.text}" 전송 완료 (${okCount === 1 ? results.find(r => r.ok).name : okCount + '명'})`);
+    if (failed.length) showTopErrorToast(`"${todo.text}" 전송 실패 (${failed.join(', ')})`);
+  });
 }
 
 // ===== 회원 관리(관리자 전용 — "지금 로그인한 이름이 ADMIN_NAME인가"만 보고 간단히 판단) =====
@@ -541,15 +579,17 @@ function buildTodoRow(todo, parentId) {
     li.appendChild(addChild);
   }
 
-  // 항상 내 노트만 보이므로(owner === 나) 공유/삭제 둘 다 제약 없이 그대로 둠 — 공유는
-  // "복사해서 보내기"라 원본(지금 이 노트)엔 전혀 영향이 없고, 삭제도 항상 내 것만 지움
-  const share = document.createElement('button');
-  share.type = 'button';
-  share.className = 'todo-share';
-  share.title = '공유하기(복사본 보내기)';
-  share.textContent = '↗';
-  share.addEventListener('click', () => openShareModal(todo.id));
-  li.appendChild(share);
+  // 하위 항목은 공유 버튼을 안 보여줌 — 부모 없이 자식만 따로 복사해서 보내면 받는 사람
+  // 입장에선 최상위로 떨어지는 건지 뭔지 애매해서, 공유는 최상위 노트한테서만 가능하게 함
+  if (!isChild) {
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'todo-share';
+    share.title = '공유하기(복사본 보내기)';
+    share.textContent = '↗';
+    share.addEventListener('click', () => openShareModal(todo));
+    li.appendChild(share);
+  }
 
   const del = document.createElement('button');
   del.type = 'button';
@@ -600,6 +640,17 @@ function startEditTodo(id) {
 // 보여준 뒤, 서버 응답이 오면 그 임시 id를 서버가 준 진짜 id로 조용히 바꿔치기(리렌더 없이
 // dataset.id만 갱신 — 리렌더를 하면 addChildTodo가 바로 이어서 여는 편집 입력창이 도중에
 // 날아가버림). 실패하면 임시로 보여줬던 항목을 다시 지움.
+//
+// 문제: 임시 id가 진짜 id로 바뀌기 전에(그 사이 보통 1초 안팎) 그 노트를 완료 체크/삭제/공유
+// 하면, 그 요청은 아직 서버가 모르는 임시 id를 들고 나가서 조용히 씹힘(서버 응답은 200이지만
+// "그런 id 없음" 취급) — 빠르게 연달아 조작할 때 가끔 반영이 안 되던 원인. pendingTaskAdds에
+// "이 임시 id의 taskAdd가 끝나면 resolve되는 Promise"를 등록해두고, 그 노트를 건드리는 다른
+// 동작은 실제 요청을 보내기 전에 이 Promise부터 기다림(짧게는 즉시, 느리면 최대 1~2초 대기) —
+// 사용자 입장에선 화면은 항상 낙관적으로 바로 바뀌고, 실제 네트워크 요청만 뒤에서 순서를 지킴
+const pendingTaskAdds = new Map(); // tempId -> Promise(성공/실패 상관없이 그 taskAdd가 끝나면 resolve)
+function waitPendingAdd(id) {
+  return pendingTaskAdds.get(id) || Promise.resolve();
+}
 function makeTempTaskId() {
   return 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
@@ -628,9 +679,11 @@ function addPersonalTodo(text) {
   sharedTasks.push(task);
   renderPersonalTodos();
   const tempId = task.id;
-  apiPost({ action: 'taskAdd', text: t, owner, assignee, parentId: '', order: newOrder })
+  const addPromise = apiPost({ action: 'taskAdd', text: t, owner, assignee, parentId: '', order: newOrder })
     .then(res => { if (res.ok) patchTaskId(task, res.id); else rollbackTempTask(tempId); })
-    .catch(err => { console.error('[addPersonalTodo] 저장 실패(오프라인 등)', err); rollbackTempTask(tempId); });
+    .catch(err => { console.error('[addPersonalTodo] 저장 실패(오프라인 등)', err); rollbackTempTask(tempId); })
+    .finally(() => pendingTaskAdds.delete(tempId));
+  pendingTaskAdds.set(tempId, addPromise);
 }
 function addChildTodo(parentId) {
   const parent = sharedTasks.find(t => t.id === parentId);
@@ -643,21 +696,36 @@ function addChildTodo(parentId) {
   renderPersonalTodos();
   startEditTodo(task.id); // 추가하자마자 바로 입력할 수 있게(응답 기다리지 않음)
   const tempId = task.id;
-  apiPost({ action: 'taskAdd', text: '', owner, assignee, parentId, order: newOrder })
-    .then(res => { if (res.ok) patchTaskId(task, res.id); else rollbackTempTask(tempId); })
-    .catch(err => { console.error('[addChildTodo] 저장 실패(오프라인 등)', err); rollbackTempTask(tempId); });
+  const addPromise = (async () => {
+    await waitPendingAdd(parentId); // 부모가 아직 임시 id면(막 만든 부모에 바로 하위 추가한 경우) 진짜 id부터 확정되길 기다림
+    if (!sharedTasks.includes(parent)) { rollbackTempTask(tempId); return; } // 기다리는 사이 부모 자체가 실패해서 사라졌으면 자식도 취소
+    let res;
+    try {
+      res = await apiPost({ action: 'taskAdd', text: '', owner, assignee, parentId: parent.id, order: newOrder }); // parent.id는 그 사이 진짜 id로 바뀌었을 수 있음
+    } catch (err) {
+      console.error('[addChildTodo] 저장 실패(오프라인 등)', err);
+      rollbackTempTask(tempId);
+      return;
+    }
+    if (res.ok) patchTaskId(task, res.id); else rollbackTempTask(tempId);
+  })().finally(() => pendingTaskAdds.delete(tempId));
+  pendingTaskAdds.set(tempId, addPromise);
 }
-function toggleTodo(id) {
+async function toggleTodo(id) {
   const { todo } = findTodoAndParent(id);
   if (!todo) return;
-  todo.done = !todo.done; // 낙관적 반영
+  todo.done = !todo.done; // 낙관적 반영 — 화면엔 바로 보여줌
   renderPersonalTodos();
-  apiPost({ action: 'taskToggle', id });
+  await waitPendingAdd(id); // 아직 임시 id면 진짜 id 확정까지 기다렸다가 보냄(먼저 나간 taskAdd가 씹히는 것 방지)
+  if (!sharedTasks.includes(todo)) return; // 기다리는 사이 삭제/롤백됐으면 더 할 거 없음
+  apiPost({ action: 'taskToggle', id: todo.id }); // 대기 중 patchTaskId로 바뀌었을 수 있어 항상 "지금" id를 씀
 }
-function deleteTodo(id) {
-  sharedTasks = sharedTasks.filter(t => t.id !== id && t.parentId !== id); // 부모면 자식(1단계)도 같이 정리
+async function deleteTodo(id) {
+  const { todo } = findTodoAndParent(id);
+  sharedTasks = sharedTasks.filter(t => t.id !== id && t.parentId !== id); // 부모면 자식(1단계)도 같이 정리 — 화면에서 낙관적으로 바로 지움
   renderPersonalTodos();
-  apiPost({ action: 'taskDelete', id }); // 항상 내 것만 지움(공유는 복사본이라 남의 것엔 영향 없음)
+  await waitPendingAdd(id);
+  apiPost({ action: 'taskDelete', id: todo ? todo.id : id }); // 항상 내 것만 지움(공유는 복사본이라 남의 것엔 영향 없음)
 }
 
 // 최초 실행 시 이름 하나만 물어봄(비밀번호 없음, 취소 불가) — 이후엔 이 컴퓨터에 저장된 이름을
@@ -786,7 +854,14 @@ function measureContentHeight() {
   const bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
   return Math.ceil(Math.max(target * bodyZoom, 120)) + 6;
 }
+// 창을 드래그로 옮기는 동안엔 무조건 꺼둠 — 다른(특히 배율이 다른) 모니터로 넘어갈 때 Windows가
+// DPI에 맞춰 렌더링 스케일을 다시 잡는데, 그때 #app 크기가 실제 내용 변화 없이도 바뀐 것처럼
+// 감지돼서 ResizeObserver → resizeToContent → 창 크기 재설정 → 다시 크기 변화 감지 → ... 로
+// 무한히 되먹임되며 창이 계속 커지는 문제가 있었음(실측: 다른 모니터로 드래그하며 흔들면 재현).
+// 이동 중엔 콘텐츠가 바뀔 일이 없으니 그냥 다 무시하고, 마우스를 놓은 뒤 딱 한 번만 확인함
+let isDraggingWindow = false;
 function resizeToContent() {
+  if (isDraggingWindow) return;
   // 다이어리 모드는 폭과 마찬가지로 높이도 사용자가 우하단 핸들로 직접 조절하게 둠(보드처럼 쓰는
   // 용도라 위젯처럼 매번 내용 크기로 자동으로 되돌리면 대각선 리사이즈가 먹통이 됨) — 모드
   // 진입/이탈 시점에만 setDiaryMode에서 직접 한 번 크기를 잡아주고, 그 뒤로는 손대지 않음
@@ -842,6 +917,8 @@ const weekdayOf = (dateStr) => {
 // ===== What's New (최근 5개만) =====
 // 새 버전 낼 때 위에 하나 추가하고 5개 넘으면 맨 아래 것부터 빼면 됨. id는 안 겹치게만 하면 됨.
 const UPDATE_LOG = [
+  { id: 'u2026-resize-monitor-fix', tag: 'fix', date: '7/29', text: '다른 배율의 모니터로 드래그하면 창 크기가 계속 커지던 버그 수정 — 드래그 중엔 자동 크기 맞춤을 잠깐 꺼둠' },
+  { id: 'u2026-race-queue', tag: 'fix', date: '7/29', text: '노트 만들자마자 바로 완료체크/삭제/공유하면 가끔 조용히 씹히던 문제 수정. 이제 전송 성공/실패를 위쪽에 잠깐 알려줌. 하위 항목은 공유 버튼 제거(애매해서), 일정 Send To는 내 My Notes에도 같이 추가됨' },
   { id: 'u2026-diary-default', tag: 'improved', date: '7/29', text: '다이어리 모드가 이제 기본값(첫 실행 시 켜진 채로 시작) — 한번 끄면 그 상태를 기억함' },
   { id: 'u2026-sendto-dropdown-fix', tag: 'fix', date: '7/29', text: 'Send To가 모달 위에 모달로 떠서 뒤로 숨거나 바깥클릭이 꼬이던 문제 수정 — 버튼 바로 아래 드롭다운으로 바꿈' },
   { id: 'u2026-send-to', tag: 'new', date: '7/29', text: '일정 등록 시 Author 자리가 Send To로 바뀜 — 골라서 저장하면 그 사람 My Notes로 일정 내용이 전송됨(자동으로 Team Post 지정). 받은 노트엔 보낸 사람 대신 일정 날짜가 빨갛게 표시. 최근 입력 기록 칩은 제거해서 공간 확보' },
@@ -1140,11 +1217,15 @@ async function init() {
     if (!dragStart) return;
     const dx = e.screenX - dragStart.x, dy = e.screenY - dragStart.y;
     if (!dx && !dy) return;
+    if (!isDraggingWindow) isDraggingWindow = true; // 드래그 시작 — resizeToContent가 이동 중엔 아무것도 안 하게 막음
     dragMoved = true;
     window.api?.moveBy?.(dx, dy);
     dragStart = { x: e.screenX, y: e.screenY };
   });
-  document.addEventListener('mouseup', () => { dragStart = null; });
+  document.addEventListener('mouseup', () => {
+    dragStart = null;
+    if (isDraggingWindow) { isDraggingWindow = false; resizeToContent(); } // 이동이 끝났으니 그제서야 한 번 확인
+  });
 
   // Tack처럼 위젯 창이 포커스를 잃으면 열려있던 모달/팝업을 정리하고 달력만 남김
   window.api?.onBlur?.(closeAllOverlaysOnBlur);
@@ -1735,11 +1816,36 @@ function sendEventCopiesIfNeeded(title, date) {
   const recipients = sendToSelection.includes(SHARE_ALL)
     ? members.filter(name => name !== localData.userName)
     : [...sendToSelection];
-  recipients.forEach(name => {
+  // 받는 사람들 몫 — 내 화면엔 안 보이는 남의 것들이라 화면 반영은 필요 없고, 결과만 모아서
+  // 다 끝나면 "전송 완료/실패"를 한 번에 요약해서 알림
+  const sendResults = recipients.map(name => {
     const topLevelOrders = sharedTasks.filter(t => t.owner === name && !t.parentId).map(t => Number(t.order) || 0);
     const newOrder = topLevelOrders.length ? Math.min(...topLevelOrders) - 1 : 0;
-    apiPost({ action: 'taskAdd', text: title, owner: name, assignee: localData.userName, parentId: '', order: newOrder, eventDate: date });
+    return apiPost({ action: 'taskAdd', text: title, owner: name, assignee: localData.userName, parentId: '', order: newOrder, eventDate: date })
+      .then(res => ({ name, ok: !!res.ok }))
+      .catch(err => { console.error('[sendEventCopiesIfNeeded]', err); return { name, ok: false }; });
   });
+  Promise.all(sendResults).then(results => {
+    const failed = results.filter(r => !r.ok).map(r => r.name);
+    const okCount = results.length - failed.length;
+    if (okCount) showTopSuccessToast(`"${title}" 전송 완료 (${okCount === 1 ? results.find(r => r.ok).name : okCount + '명'})`);
+    if (failed.length) showTopErrorToast(`"${title}" 전송 실패 (${failed.join(', ')})`);
+  });
+  // 보낸 나한테도 같은 내용으로 하나 남김(당연히 내 할 일 목록에도 있어야 하니까) — 내 화면에
+  // 바로 보여야 하므로 다른 My Notes 추가와 같은 낙관적(임시 id → 진짜 id) 방식을 씀
+  const myOrders = sharedTasks.filter(t => t.owner === localData.userName && !t.parentId).map(t => Number(t.order) || 0);
+  const myNewOrder = myOrders.length ? Math.min(...myOrders) - 1 : 0;
+  const myTask = { id: makeTempTaskId(), text: title, done: false, parentId: '', order: myNewOrder, owner: localData.userName, assignee: '', eventDate: date, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  sharedTasks.push(myTask);
+  renderPersonalTodos();
+  const myTempId = myTask.id;
+  apiPost({ action: 'taskAdd', text: title, owner: localData.userName, assignee: '', parentId: '', order: myNewOrder, eventDate: date })
+    .then(res => { if (res.ok) patchTaskId(myTask, res.id); else { rollbackTempTask(myTempId); showTopErrorToast(`"${title}" 내 My Notes 추가 실패`); } })
+    .catch(err => {
+      console.error('[sendEventCopiesIfNeeded] 내 몫 저장 실패(오프라인 등)', err);
+      rollbackTempTask(myTempId);
+      showTopErrorToast(`"${title}" 내 My Notes 추가 실패 — 오프라인?`);
+    });
   sendToSelection = [];
   updateSendToButtonLabel();
 }
